@@ -1,0 +1,83 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# DAG parameters
+# mandatory
+dag_id: gcs_tasks_dag
+description:
+max_active_runs:
+catchup: False
+# mandatory; enclose values within quotes
+schedule_interval: "None"
+tags: ["test"]
+owner:
+
+# mandatory
+default_args:
+    owner: 'test'
+    retries:
+    email_on_failure: False
+    email_on_retry: False
+    # ex - [test@test.com]
+    email:                          
+    # minutes
+    retry_delay: 1
+    
+envs:
+    # mandatory
+    default:
+        # DAG tasks configs
+        # mandatory
+        tasks:
+        #cc_operator_description: Creates a new bucket.
+        - task_id: create_bucket
+          task_type: airflow.providers.google.cloud.operators.gcs.GCSCreateBucketOperator
+          project_id: cc_var_project_id
+          bucket_name: cc_var_bucket_name
+          #resource:
+          storage_class: MULTI_REGIONAL
+          labels: {"env": "dev", "team": "airflow"}
+          #gcp_conn_id: 
+          #impersonation_chain:
+          trigger_rule : 'none_failed'
+          upstream_task: None
+        #cc_operator_description: Synchronizes the contents of the buckets or bucket's directories in the Google Cloud Services.
+        - task_id: synchronize_bucket
+          task_type: airflow.providers.google.cloud.operators.gcs.GCSSynchronizeBucketsOperator
+          source_bucket: cc_var_public_bucket
+          source_object: "shakespeare/rose.txt"
+          destination_bucket: cc_var_bucket_name
+          destination_object: "shakespeare/rose.txt"
+          trigger_rule : 'none_failed'
+          upstream_task: create_bucket
+        #cc_operator_description: List all objects from the bucket filtered by given string prefix and delimiter in name or match_glob.
+        - task_id: list_objects
+          task_type: airflow.providers.google.cloud.operators.gcs.GCSListObjectsOperator
+          bucket : cc_var_bucket_name
+          prefix: shakespeare/
+          #match_glob: "**/*/.txt"
+          #gcp_conn_id: google_cloud_conn_id
+          trigger_rule : 'none_failed'
+          upstream_task: synchronize_bucket
+        #cc_operator_description: Deletes bucket from a Google Cloud Storage.
+        - task_id: delete_bucket
+          task_type: airflow.providers.google.cloud.operators.gcs.GCSDeleteBucketOperator
+          bucket_name: cc_var_bucket_name
+          trigger_rule: 'all_done'
+          upstream_task: list_objects
+    composer-templates-dev:
+        cc_var_project_id: composer-templates-dev
+        cc_var_bucket_name: test-bucket12345654321
+        cc_var_public_bucket: pub
+        

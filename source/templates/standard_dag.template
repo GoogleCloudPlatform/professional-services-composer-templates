@@ -1,0 +1,207 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+import os
+import airflow
+import yaml
+import logging
+from datetime import datetime, timedelta
+from airflow.models import DAG
+from typing import Any
+from typing import Dict
+from airflow.operators.dummy_operator import DummyOperator
+from google.cloud import storage
+
+
+{%- set task_libraries = dict() %}
+
+{%- for n in range(config_data['envs']['default']['tasks']|length) %}
+{%- set key = '.'.join(config_data['envs']['default']['tasks'][n]['task_type'].split('.')[0:-1]) %}
+{%- set value = '.'.join(config_data['envs']['default']['tasks'][n]['task_type'].split('.')[-1:]) %}
+{%- set _dummy = task_libraries.__setitem__(value,key) %}
+{%- endfor %}
+
+{%- for key,value in task_libraries.items() %}
+from {{ value }} import {{ key }} 
+{%- endfor %}
+
+{%- set config_values = namespace() %}
+{%- for key, value in framework_config_values.items() %}
+{%- if key == "dynamic_config" %}
+{%- set config_values.dynamic_config = value %}
+{%- endif %}
+{%- if key == "composer_env_name" %}
+{%- set config_values.composer_env_name = value %}
+{%- endif %}
+{%- endfor %}
+
+log = logging.getLogger("airflow")
+log.setLevel(logging.INFO)
+
+{%- if config_values.dynamic_config == "True" or config_values.dynamic_config == "true" %}
+composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
+composer_env_bucket = os.environ["GCS_BUCKET"]
+env_configs = {}
+
+def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
+    """Downloads a blob from the bucket."""
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(source_blob_name)
+    blob.download_to_filename("config.yaml")
+    with open("config.yaml") as f:
+        config = yaml.safe_load(f)
+    return config
+
+run_time_config_data = load_config_from_gcs(
+    bucket_name=composer_env_bucket,
+    source_blob_name="dag_configs/{{ config_data["config_file_name"] }}"
+)
+
+for env, configs in run_time_config_data['envs'].items():
+    if env == composer_env_name and type(configs) is dict:
+        env_configs = configs
+
+{%- endif %}
+
+default_args = {
+    {%- if config_data['default_args']['owner'] is defined and config_data['default_args']['owner'] is not none %}
+        "owner": '{{ config_data['default_args']['owner']}}',
+    {%- endif %}
+    {%- if config_data['default_args']['retries'] is defined and config_data['default_args']['retries'] is not none %}
+        "retries": {{ config_data['default_args']['retries'] }},
+    {%- else %}
+        "retries": 1,
+    {%- endif %}
+    {%- if config_data['default_args']['email_on_failure'] is defined and config_data['default_args']['email_on_failure'] is not none %}
+        "email_on_failure": {{ config_data['default_args']['email_on_failure'] }},
+    {%- endif %}
+    {%- if config_data['default_args']['email_on_retry'] is defined and config_data['default_args']['email_on_retry'] is not none %}
+        "email_on_retry": {{ config_data['default_args']['email_on_retry'] }},
+    {%- endif %}
+    {%- if config_data['default_args']['email'] is defined and config_data['default_args']['email'] is not none %}
+        "email": {{ config_data['default_args']['email'] }},
+    {%- endif %}
+    {%- if config_data['default_args']['retry_delay'] is defined and config_data['default_args']['retry_delay'] is not none %}
+        "retry_delay": timedelta(minutes={{ config_data['default_args']['retry_delay'] }}),
+    {%- else %}
+        "retry_delay": timedelta(minutes=2),
+    {%- endif %}
+    {%- if config_data['default_args']['sla'] is defined and config_data['default_args']['sla'] is not none %}
+        "sla": timedelta(minutes={{ config_data['default_args']['sla'] }}),
+    {%- else %}
+        "sla": timedelta(minutes=55),
+    {%- endif %}
+    {%- if config_data['default_args']['execution_timeout'] is defined and config_data['default_args']['execution_timeout'] is not none %}
+        "execution_timeout": timedelta(minutes={{ config_data['default_args']['execution_timeout'] }}),
+    {%- else %}
+        "execution_timeout": timedelta(minutes=60),
+    {%- endif %}
+    {%- if config_data['default_args']['depends_on_past'] is defined and config_data['default_args']['depends_on_past'] is not none %}
+        "depends_on_past": {{ config_data['default_args']['depends_on_past'] }},
+    {%- endif %}
+}
+
+dag = DAG(
+        dag_id='{{ config_data['dag_id'] }}',
+        default_args = default_args, 
+    {%- if config_data['schedule_interval'] == 'None' %}
+        schedule_interval=None,
+    {%- elif config_data['schedule_interval'] is defined and config_data['schedule_interval'] is not none %}
+        schedule_interval='{{ config_data['schedule_interval'] }}',
+    {%- else %}
+        schedule_interval='@once',
+    {%- endif %}
+    {%- if config_data['description'] is defined and config_data['description'] is not none %}
+        description='{{ config_data['description'] }}',
+    {%- endif %}
+    {%- if config_data['max_active_runs'] is defined and config_data['max_active_runs'] is not none %}
+        max_active_runs={{ config_data['max_active_runs'] }},
+    {%- else %}
+        max_active_runs=1,
+    {%- endif %}
+    {%- if config_data['catchup'] is defined and config_data['catchup'] is not none %}
+        catchup={{ config_data['catchup'] }},
+    {%- else %}
+        catchup=False,
+    {%- endif %}
+    {%- if config_data['is_paused_upon_creation'] is defined and config_data['is_paused_upon_creation'] is not none %}
+        is_paused_upon_creation={{ config_data['is_paused_upon_creation'] }},
+    {%- else %}
+        is_paused_upon_creation=True,
+    {%- endif %}
+    {%- if config_data['dagrun_timeout'] is defined and config_data['dagrun_timeout'] is not none %}
+        dagrun_timeout={{ config_data['dagrun_timeout'] }},
+    {%- endif %}
+    {%- if config_data['tags'] is defined and config_data['tags'] is not none %}
+        tags={{ config_data['tags'] }},
+    {%- else %}
+        tags=['composer-templates']
+    {%- endif %}
+        start_date=airflow.utils.dates.days_ago(0)
+)
+
+with dag:
+
+    start = DummyOperator(task_id='start')
+    
+    {%- set item = namespace(value='start') %}
+
+    {%- set depen_task_dct = dict() -%}
+
+    {%- for n in range(config_data['envs']['default']['tasks']|length) %}
+
+    {{ config_data['envs']['default']['tasks'][n]['task_id'] }} = {{ config_data['envs']['default']['tasks'][n]['task_type'].split('.')[-1:][0] }} (
+        {%- for key in config_data['envs']['default']['tasks'][n].keys() %}
+        {%- if key != 'upstream_task' and key != 'task_type' %}
+            {%- set value = config_data['envs']['default']['tasks'][n][key] -%}
+        {%- if value is string %}             
+        {%- if value[:7] != "cc_var_" %}
+            {{ key }} = '{{ value }}',
+        {%- else %}        
+        {%- if config_values.dynamic_config == "True" or config_values.dynamic_config == "true" %}
+            {{ key }} = env_configs.get('{{ value }}'),
+        {%- else %}
+            {{ key }} = {{ config_data['envs'][config_values.composer_env_name][value]|tojson }},
+        {%- endif %}
+        {%- endif %}
+        {%- else %}
+            {{ key }} = {{ value }},
+        {%- endif %}
+        {%- endif %}
+        {%- endfor %}
+        )
+    {%- set _ = depen_task_dct.update({config_data['envs']['default']['tasks'][n]['task_id']: config_data['envs']['default']['tasks'][n]['upstream_task']}) -%}
+    {%- endfor %}
+    
+    {%- set depen_task_group_dict = dict() -%}
+    {%- for key, value in depen_task_dct.items() -%}
+        {%- set _ = depen_task_group_dict.setdefault(value, []).append(key) -%}
+    {%- endfor %}
+
+    {%- set final_tasks_seq = [] -%}
+    {%- for key, task in depen_task_group_dict.items() -%}
+      {%- if task | length < 2 -%}
+        {%- set new_task = task | first -%}
+        {{ final_tasks_seq.append(new_task) or "" }}
+      {%- elif task | length > 1 -%}
+        {%- set new_task = "[" ~ task | join(",") ~"]"  -%}
+        {{ final_tasks_seq.append(new_task) or "" }}
+      {%- else -%}
+        {{ "Unexpected error occurred" }}
+      {%- endif -%}
+    {%- endfor %}
+    
+    {{ item.value ~ " >> " ~ final_tasks_seq|join(" >> ") }}

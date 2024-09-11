@@ -1,0 +1,52 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# DAG parameters
+# mandatory
+dag_id: datafusion_tasks_dag
+description:
+max_active_runs:
+catchup: False
+# mandatory; enclose values within quotes
+schedule_interval: "None"
+tags: ["test"]
+owner:
+
+# mandatory
+default_args:
+    owner: 'test'
+    retries:
+    email_on_failure: False
+    email_on_retry: False
+    # ex - [test@test.com]
+    email:                          
+    # minutes
+    retry_delay: 1    
+    
+envs:
+    # mandatory
+    default:
+        # DAG tasks configs
+        # mandatory
+        tasks:
+        #cc_operator_description: starts a datafusion pipeline
+        - task_id: create_datafusion_pipeline
+          task_type: airflow.providers.google.cloud.operators.datafusion.CloudDataFusionStartPipelineOperator
+          pipeline_name: test
+          instance_name: test1
+          location: us-west1
+          project_id: composer-templates-dev
+          upstream_task: None
+          trigger_rule : 'none_failed'

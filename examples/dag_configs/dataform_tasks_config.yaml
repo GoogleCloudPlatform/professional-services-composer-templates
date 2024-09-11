@@ -1,0 +1,61 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# DAG parameters
+# mandatory
+dag_id: dataform_tasks_dag
+description:
+max_active_runs:
+catchup: False
+# mandatory; enclose values within quotes
+schedule_interval: "None"
+tags: ["test"]
+owner:
+
+# mandatory
+default_args:
+    owner: 'test'
+    retries:
+    email_on_failure: False
+    email_on_retry: False
+    # ex - [test@test.com]
+    email:                          
+    # minutes
+    retry_delay: 1    
+    
+envs:
+    # mandatory
+    default:
+        # DAG tasks configs
+        # mandatory
+        tasks:
+        #cc_operator_description: Creates a new CompilationResult in a given project and location.
+        - task_id: create_compilation_result
+          task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateCompilationResultOperator
+          project_id: 'composer-templates-dev'
+          region: 'us-central1'
+          repository_id: 'quickstart-production'
+          compilation_result: {"git_commitish": "main"}
+          upstream_task: None
+          trigger_rule : 'none_failed'
+        #cc_operator_description: Creates a new WorkflowInvocation in a given Repository.
+        - task_id: create_workflow_invocation
+          task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateWorkflowInvocationOperator
+          project_id: 'composer-templates-dev'
+          region: 'us-central1'
+          repository_id: 'quickstart-production'
+          asynchronous: True
+          workflow_invocation: {"compilation_result": "{{ task_instance.xcom_pull('create_compilation_result')['name'] }}"}
+          upstream_task: create_compilation_result
+          trigger_rule : 'none_failed'
