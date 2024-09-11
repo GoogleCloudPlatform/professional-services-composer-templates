@@ -7,7 +7,7 @@ This is not an officially supported Google product. Please be aware that bugs ma
 
 ## Install requirements
 ```sh
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt 
 ```
 
 ## Usage
