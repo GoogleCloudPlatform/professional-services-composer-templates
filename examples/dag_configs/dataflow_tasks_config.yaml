@@ -34,8 +34,7 @@ default_args:
     # minutes
     retry_delay: 1    
 
-#Optional
-#Python functions used by Python operator
+#Python functions used by Python operator. If there are no function keep it blank
 functions:
   # perform_transformation:
   #   description: Sample function as an example to perform custom transformation.
