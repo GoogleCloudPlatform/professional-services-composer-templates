@@ -46,6 +46,37 @@ default_args:
     # minutes
     retry_delay: 1                  
 
+#Optional
+#Python functions used by Python operator
+functions:
+  # perform_transformation:
+  #   description: Sample function as an example to perform custom transformation.
+  #   code: |
+  #     def transformation(data):
+  #       """
+  #       Sample function as an example to perform custom transformation.
+
+  #       Args:
+  #         data: Sample data on which we can perform any transformation.
+        
+  #       Returns:
+  #         The data converted into a string format.
+  #       """
+  #       print("Printing sample payload from transformation function: {}".format(data))
+  #       output = str(data)
+  #       return output
+  # pull_xcom:
+  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+  #   code: |
+  #     def pull_xcom(**kwargs):
+  #       """
+  #       Pulls a value from XCom and prints it.
+  #       """
+  #       ti = kwargs['ti']
+  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  #       print(f"Pulled value from XCom: {pulled_value}")
+  #       return pulled_value
+
 #Environment specific configs
 # mandatory
 envs:
@@ -89,6 +120,12 @@ envs:
           body: cc_var_export_to_gcs_cloud_sql_body
           trigger_rule : 'all_done'
           upstream_task: cloud_sql_create_sales_reporting_table_task
+        #cc_operator_description: print the GCS uri where the file is written.
+        # - task_id: print_gcs_uri
+        #   task_type: airflow.operators.python_operator.PythonOperator
+        #   python_callable: pull_xcom
+        #   trigger_rule : 'all_done'
+        #   upstream_task: export_sales_reporting_table_to_gcs
     composer-templates-dev:
         # Below connection_id is retrieved from Google Cloud Secret Manager. 
         # A secret should be created with the naming convention: airflow-connections-<variable_name> ex: airflow-connections-airflow_composer_template_mysql

@@ -1,0 +1,112 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Before configuring YAML and generate DAG, please setup Inspection and De-Identification templates which can be used for the job
+
+# To configure follow the steps mentioned below
+# 1. Go to Google Cloud Console --> search for sensitive-data-protection
+
+#Creating Inspection templates
+# https://cloud.google.com/sensitive-data-protection/docs/creating-templates-inspect
+
+#creating Deidentification templates
+# https://cloud.google.com/sensitive-data-protection/docs/creating-templates-deid#create_a_de-identification_template
+
+# Few open source examples
+# https://cloud.google.com/sensitive-data-protection/docs/samples
+
+# Helpful API resources for further configurations
+# https://airflow.apache.org/docs/apache-airflow-providers-google/stable/_api/airflow/providers/google/cloud/operators/dlp/index.html#airflow.providers.google.cloud.operators.dlp.CloudDLPCreateDLPJobOperator 
+# https://cloud.google.com/sensitive-data-protection/docs/reference/rest/v2/InspectJobConfig#CloudStorageOptions 
+# https://cloud.google.com/sensitive-data-protection/docs/reference/rest/v2/projects.deidentifyTemplates#DeidentifyTemplate.DeidentifyConfig
+# https://cloud.google.com/python/docs/reference/dlp/latest/google.cloud.dlp_v2.types.InspectJobConfig 
+
+# Logical flow and othe examples can be
+# Once process finishes writing to GCS, we can trigger DLP job to de-identify and write results to another GCS location for further consumption
+
+# To Export data to GCS using this DAG tmplate please configure the Service account with apporiate roles and access as mentioned:
+# https://cloud.google.com/sql/docs/mysql/import-export/import-export-csv#export_data_from
+
+# DAG parameters
+# mandatory
+dag_id: data_loss_preventive_deidentify_job     
+description:
+max_active_runs:
+catchup: False
+# mandatory; enclose values within quotes
+schedule_interval: "None"        
+tags: ["test"]
+owner:
+
+# mandatory
+default_args:
+    owner: 'test'
+    retries:
+    email_on_failure: False
+    email_on_retry: False
+    # ex - [test@test.com]
+    email:                          
+    # minutes
+    retry_delay: 1                  
+
+#Optional
+#Python functions used by Python operator
+functions:
+  # perform_transformation:
+  #   description: Sample function as an example to perform custom transformation.
+  #   code: |
+  #     def transformation(data):
+  #       """
+  #       Sample function as an example to perform custom transformation.
+
+  #       Args:
+  #         data: Sample data on which we can perform any transformation.
+        
+  #       Returns:
+  #         The data converted into a string format.
+  #       """
+  #       print("Printing sample payload from transformation function: {}".format(data))
+  #       output = str(data)
+  #       return output
+  # pull_xcom:
+  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+  #   code: |
+  #     def pull_xcom(**kwargs):
+  #       """
+  #       Pulls a value from XCom and prints it.
+  #       """
+  #       ti = kwargs['ti']
+  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  #       print(f"Pulled value from XCom: {pulled_value}")
+  #       return pulled_value
+
+#Environment specific configs
+# mandatory
+envs:
+    # mandatory
+    default:
+        # DAG tasks configs
+        # mandatory
+        tasks:
+        #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
+        - task_id: trigger_dlp_deindentify_job
+          task_type: airflow.providers.google.cloud.operators.dlp.CloudDLPCreateDLPJobOperator
+          project_id: cc_var_gcp_project_id
+          inspect_job: cc_var_dlp_job_payload
+          trigger_rule : 'all_done'
+          upstream_task: None
+    composer-templates-dev:
+        # Below connection_id is retrieved from Google Cloud Secret Manager. 
+        cc_var_gcp_project_id : composer-templates-dev
+        cc_var_dlp_job_payload: {"storage_config": {"cloud_storage_options": {"file_set": {"url": "gs://composer-templates-dev-input-files/dlp_operator_input/"}, "file_types": ["TEXT_FILE"]}}, "inspect_config": {"info_types": [{"name": "PHONE_NUMBER"}, {"name": "US_SOCIAL_SECURITY_NUMBER"}, {"name": "EMAIL_ADDRESS"}], "min_likelihood": "VERY_UNLIKELY"}, "inspect_template_name": "projects/composer-templates-dev/locations/global/inspectTemplates/demo-composer-template-inspect-test", "actions": [{"save_findings": {"output_config": {"table": {"project_id": "composer-templates-dev", "dataset_id": "test_dataset", "table_id": "dlp_googleapis_2024_11_02_5447016892596828032"}}}}, {"deidentify": {"transformation_config": {"deidentify_template": "projects/composer-templates-dev/locations/global/deidentifyTemplates/demo-composer-template-test"}, "cloud_storage_output": "gs://hmh_backup/deidentified-data_output/"}}]}

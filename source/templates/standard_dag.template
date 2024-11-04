@@ -76,6 +76,14 @@ for env, configs in run_time_config_data['envs'].items():
 
 {%- endif %}
 
+{%- if config_data['functions'] is defined and config_data['functions'] is not none %}
+{%- for function_name, function_data in config_data['functions'].items() %}
+
+{{ function_data['code'] }}
+
+{%- endfor %}
+{%- endif %}
+
 default_args = {
     {%- if config_data['default_args']['owner'] is defined and config_data['default_args']['owner'] is not none %}
         "owner": '{{ config_data['default_args']['owner']}}',
@@ -156,9 +164,8 @@ dag = DAG(
 with dag:
 
     start = DummyOperator(task_id='start')
-    
-    {%- set item = namespace(value='start') %}
 
+    {%- set item = namespace(value='start') %}
     {%- set depen_task_dct = dict() -%}
 
     {%- for n in range(config_data['envs']['default']['tasks']|length) %}
@@ -167,7 +174,10 @@ with dag:
         {%- for key in config_data['envs']['default']['tasks'][n].keys() %}
         {%- if key != 'upstream_task' and key != 'task_type' %}
             {%- set value = config_data['envs']['default']['tasks'][n][key] -%}
-        {%- if value is string %}             
+        {%- if value is string %}  
+        {%- if key== "python_callable" %}
+            {{ key }} = {{ value }},
+        {%- else %}
         {%- if value[:7] != "cc_var_" %}
             {{ key }} = '{{ value }}',
         {%- else %}        
@@ -175,6 +185,7 @@ with dag:
             {{ key }} = env_configs.get('{{ value }}'),
         {%- else %}
             {{ key }} = {{ config_data['envs'][config_values.composer_env_name][value]|tojson }},
+        {%- endif %}
         {%- endif %}
         {%- endif %}
         {%- else %}
@@ -185,7 +196,7 @@ with dag:
         )
     {%- set _ = depen_task_dct.update({config_data['envs']['default']['tasks'][n]['task_id']: config_data['envs']['default']['tasks'][n]['upstream_task']}) -%}
     {%- endfor %}
-    
+
     {%- set depen_task_group_dict = dict() -%}
     {%- for key, value in depen_task_dct.items() -%}
         {%- set _ = depen_task_group_dict.setdefault(value, []).append(key) -%}

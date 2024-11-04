@@ -33,7 +33,40 @@ default_args:
     email:                          
     # minutes
     retry_delay: 1
-    
+
+#Optional
+#Python functions used by Python operator
+functions:
+  # perform_transformation:
+  #   description: Sample function as an example to perform custom transformation.
+  #   code: |
+  #     def transformation(data):
+  #       """
+  #       Sample function as an example to perform custom transformation.
+
+  #       Args:
+  #         data: Sample data on which we can perform any transformation.
+        
+  #       Returns:
+  #         The data converted into a string format.
+  #       """
+  #       print("Printing sample payload from transformation function: {}".format(data))
+  #       output = str(data)
+  #       return output
+  # pull_xcom:
+  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+  #   code: |
+  #     def pull_xcom(**kwargs):
+  #       """
+  #       Pulls a value from XCom and prints it.
+  #       """
+  #       ti = kwargs['ti']
+  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  #       print(f"Pulled value from XCom: {pulled_value}")
+  #       return pulled_value
+
+#Environment specific configs
+# mandatory
 envs:
     # mandatory
     default:
