@@ -28,10 +28,11 @@ Here's a list of the operators that have been pretested:
 | DataflowTemplatedJobStartOperator     |  Start a Templated Cloud Dataflow job; the parameters of the operation will be passed to the job. |
 | DataflowStartFlexTemplateOperator     |  Starts flex templates with the Dataflow pipeline. |
 | BeamRunJavaPipelineOperator     |  Starts dataflow Java job |
+| CloudDataFusionStartPipelineOperator     |  Starts a datafusion pipeline |
+| CloudDLPCreateDLPJobOperator     |  Creates a new job to inspect storage or calculate risk metrics for sensitive data and masks sensitive values. |
 | DataflowStopJobOperator     |  Stops the job with the specified name prefix or Job ID. |
 | DataformCreateCompilationResultOperator     |  Creates a new CompilationResult in a given project and location. |
 | DataformCreateWorkflowInvocationOperator     |  Creates a new WorkflowInvocation in a given Repository. |
-| CloudDataFusionStartPipelineOperator     |  Starts a datafusion pipeline |
 | DataprocCreateClusterOperator     |  Create a new cluster on Google Cloud Dataproc. |
 | DataprocUpdateClusterOperator     |  Update a cluster in a project. |
 | DataprocSubmitJobOperator     |  Submit a job to a cluster. |
@@ -44,6 +45,10 @@ Here's a list of the operators that have been pretested:
 | GCSDeleteBucketOperator     |  Deletes bucket from a Google Cloud Storage. |
 | GCSObjectsWithPrefixExistenceSensor     |  Checks for the existence of GCS objects at a given prefix, passing matches via XCom. |
 | GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
+| GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
+| PythonOperator     |  Creates and runs custom defined Python Functions. |
+| SpannerQueryDatabaseInstanceOperator     |  Executes an arbitrary DML query (INSERT, UPDATE, DELETE) on Cloud Spanner. |
+
 
 ### DAG Generation
 #### Step 1: Create a configuration file as shown below
@@ -62,6 +67,37 @@ default_args: # mandatory
     email_on_retry: False
     retry_delay: 30  # seconds               
 
+#Python functions used by Python operator. If there are no function keep it blank
+functions:
+  perform_transformation:
+    description: Sample function as an example to perform custom transformation.
+    code: |
+      def transformation(data):
+        """
+        Sample function as an example to perform custom transformation.
+
+        Args:
+          data: Sample data on which we can perform any transformation.
+        
+        Returns:
+          The data converted into a string format.
+        """
+        print("Printing sample payload from transformation function: {}".format(data))
+        output = str(data)
+        return output
+  pull_xcom:
+    description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+    code: |
+      def pull_xcom(**kwargs):
+        """
+        Pulls a value from XCom and prints it.
+        """
+        ti = kwargs['ti']
+        pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+        print(f"Pulled value from XCom: {pulled_value}")
+        return pulled_value
+
+
 # Environment specific configs
 # mandatory - Having a default envs is mandatory.
 # All environment specific variables should be named starting with cc_var_
@@ -77,6 +113,12 @@ envs:
           project_id: cc_var_project_id
           upstream_task: None
           trigger_rule : 'none_failed'
+        #cc_operator_description: print the GCS uri where the file is written.
+        - task_id: print_gcs_uri
+          task_type: airflow.operators.python_operator.PythonOperator
+          python_callable: pull_xcom
+          trigger_rule : 'all_done'
+          upstream_task: export_sales_reporting_table_to_gcs
     composer-templates-dev: # This should match the composer environment name in GCP
       cc_var_project_id: composer-templates-dev
       # You can use '{{var.value.<variable_name>}}' to retrieve any environment variable value declared under each composer environment.
