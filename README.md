@@ -47,6 +47,7 @@ Here's a list of the operators that have been pretested:
 | GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
 | GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
 | PythonOperator     |  Creates and runs custom defined Python Functions. |
+| SpannerQueryDatabaseInstanceOperator     |  Executes an arbitrary DML query (INSERT, UPDATE, DELETE) on Cloud Spanner. |
 
 
 ### DAG Generation
