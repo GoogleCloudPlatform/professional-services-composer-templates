@@ -23,6 +23,7 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.dlp import CloudDLPCreateDLPJobOperator
 
 log = logging.getLogger("airflow")
@@ -61,7 +62,7 @@ default_args = {
 }
 
 dag = DAG(
-        dag_id='data_loss_preventive_deidentify_job',
+        dag_id='data_loss_preventive_deidentify_tasks_job',
         default_args = default_args,
         schedule_interval=None,
         max_active_runs=1,

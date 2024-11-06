@@ -40,7 +40,7 @@
 
 # DAG parameters
 # mandatory
-dag_id: data_loss_preventive_deidentify_job     
+dag_id: data_loss_preventive_deidentify_tasks_job     
 description:
 max_active_runs:
 catchup: False
