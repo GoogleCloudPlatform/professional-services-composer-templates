@@ -64,7 +64,7 @@ default_args:
 #Python functions used by Python operator. If there are no function keep it blank
 functions:
   import_functions_from_file: False
-  functions_file_path: /Users/devanshmodi/vscode/professional-services-composer-templates/examples/cloudspanner_test/cloudspanneroperator_functions.txt
+  functions_file_path: <yourdirectory>/cloudspanneroperator_functions.txt
   import_functions:
     upload_gcs_to_spanner:
       description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
