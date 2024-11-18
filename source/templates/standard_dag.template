@@ -77,8 +77,14 @@ for env, configs in run_time_config_data['envs'].items():
 
 {%- endif %}
 
-{%- if config_data['functions'] is defined and config_data['functions'] is not none %}
-{%- for function_name, function_data in config_data['functions'].items() %}
+{%- if python_functions['add_functions'] == False %}
+{# Do nothing #}
+{%- elif python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == True %}
+
+{{ python_functions['functions'] }}
+
+{%- elif python_functions is defined and python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == False %}
+{%- for function_name, function_data in python_functions['functions'].items() %}
 
 {{ function_data['code'] }}
 

@@ -55,6 +55,34 @@ def configure_arg_parser():
 
     return options
 
+# Read configuration file from command line
+# Please refer to the documentation (README.md) to see how to author a
+# configuration (YAML) file that is used by the program to generate
+# Airflow DAG python file.
+def import_python_functions(yaml_config:dict):
+    """
+    :description : This function is used to generate function dictonary \
+                    which can be pass to DAG template for importing python functions into DAG.
+    :param dict yaml_config: YAML configuration file for the task
+    :return dict : add_functions flag to add functions or not, \
+                   import_functions_from_file Flag with True or False\
+                   functions either string or dict based on import_functions_from_file Flag
+    """
+    if isinstance(yaml_config['functions'], dict) and \
+        yaml_config['functions']['import_functions_from_file'] == True and \
+        yaml_config['functions']['functions_file_path'] is not None:
+        print(f"reading python functions from file {str((yaml_config['functions']['functions_file_path']))}")
+        with open(str((yaml_config['functions']['functions_file_path'])), 'r') as file:
+            functions = {"add_functions":True,"import_functions_from_file":True,"functions":file.read()}
+    elif isinstance(yaml_config['functions'], dict) and \
+        yaml_config['functions']['import_functions_from_file'] == False:
+        print(f"reading python functions from given YAML")
+        functions = {"add_functions":True,"import_functions_from_file":False,"functions":yaml_config['functions']['import_functions']}
+    else:
+        print("criteria doesn't match skipping to import functions")
+        functions = {"add_functions":False}
+    return functions
+
 # Generate Airflow DAG python file by reading the config (YAML) file
 # that is passed to the program. This section loads a .template file
 # located in the ./templates folder in the source and the template folder
@@ -76,6 +104,7 @@ def generate_dag_file(args):
         file_dir = os.path.dirname(os.path.abspath(__file__))
         template_dir = os.path.join(file_dir,"templates")
         dag_id = config_data['dag_id']
+        python_functions = import_python_functions(yaml_config=config_data)
 
         print("Config file: {}".format(config_path))
         print("Generating DAG for: {}".format(dag_template))
@@ -93,7 +122,7 @@ def generate_dag_file(args):
             
         generate_file_name = os.path.join(dag_path, dag_id + '.py')
         with open(generate_file_name, 'w') as fh:
-            fh.write(template.render(config_data=config_data, framework_config_values=framework_config_values))
+            fh.write(template.render(config_data=config_data, framework_config_values=framework_config_values, python_functions=python_functions))
 
         print("Finished generating file: {}".format(generate_file_name))
         # print("Number of tasks generated: {}".format(str(len(config_data['tasks']))))
