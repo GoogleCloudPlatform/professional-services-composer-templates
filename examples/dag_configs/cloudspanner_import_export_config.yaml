@@ -174,7 +174,7 @@ envs:
           python_callable: upload_gcs_to_spanner
           op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
           trigger_rule : 'all_done'
-          upstream_task: None
+          depends_on: None
         #cc_operator_description: Delete old data from Cloud spanner table (just an example to showcase SpannerQueryDatabaseInstanceOperator)
         - task_id: delete_results_from_spanner
           task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
@@ -183,20 +183,20 @@ envs:
           query: cc_var_spanner_sql_query 
           project_id: cc_var_gcp_project_id
           trigger_rule : 'all_done'
-          upstream_task: gcs_to_spanner
+          depends_on: gcs_to_spanner
         #cc_operator_description: Export data from Cloud Spanner to GCS
         - task_id: spanner_to_gcs
           task_type: airflow.operators.python_operator.PythonOperator
           python_callable: export_spanner_to_gcs
           op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_export_gcs_bucket_name,"file_name":cc_var_export_gcs_file_name,"sql_query":cc_var_spanner_sql_export_query}
           trigger_rule : 'all_done'
-          upstream_task: delete_results_from_spanner
+          depends_on: delete_results_from_spanner
         #cc_operator_description: print the GCS uri where the file is written.
         # - task_id: print_gcs_uri
         #   task_type: airflow.operators.python_operator.PythonOperator
         #   python_callable: pull_xcom
         #   trigger_rule : 'all_done'
-        #   upstream_task: export_sales_reporting_table_to_gcs
+        #   depends_on: export_sales_reporting_table_to_gcs
     composer-templates-dev:
         cc_var_gcp_project_id: composer-templates-dev
         cc_var_spanner_instance_id: composer-templates-spannerdb

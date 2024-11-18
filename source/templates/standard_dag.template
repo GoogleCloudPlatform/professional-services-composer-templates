@@ -179,7 +179,7 @@ with dag:
 
     {{ config_data['envs']['default']['tasks'][n]['task_id'] }} = {{ config_data['envs']['default']['tasks'][n]['task_type'].split('.')[-1:][0] }} (
         {%- for key in config_data['envs']['default']['tasks'][n].keys() %}
-        {%- if key != 'upstream_task' and key != 'task_type' %}
+        {%- if key != 'depends_on' and key != 'task_type' %}
             {%- set value = config_data['envs']['default']['tasks'][n][key] -%}
         {%- if value is string %}  
         {%- if key== "python_callable" %}
@@ -212,7 +212,7 @@ with dag:
         {%- endif %}
         {%- endfor %}
         )
-    {%- set _ = depen_task_dct.update({config_data['envs']['default']['tasks'][n]['task_id']: config_data['envs']['default']['tasks'][n]['upstream_task']}) -%}
+    {%- set _ = depen_task_dct.update({config_data['envs']['default']['tasks'][n]['task_id']: config_data['envs']['default']['tasks'][n]['depends_on']}) -%}
     {%- endfor %}
 
     {%- set depen_task_group_dict = dict() -%}
