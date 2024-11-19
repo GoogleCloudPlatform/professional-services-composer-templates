@@ -207,7 +207,11 @@ envs:
       # custom_task_dependency: "start >> vilo >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs|\
       #                         [start >> gcs_to_spanner] >> spanner_to_gcs|\
       #                         start >> [delete_results_from_spanner, spanner_to_gcs]"
-    composer-templates-dev:
+    variables:
+      import_variables_from_file: False
+      variables_file_name: composer_variables_test.yaml
+      environment: dev
+      config_variables:
         cc_var_gcp_project_id: composer-templates-dev
         cc_var_spanner_instance_id: composer-templates-spannerdb
         cc_var_spanner_databse_id: dev-spannerdb

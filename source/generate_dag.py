@@ -69,7 +69,6 @@ def validate_create_task_dependency(yaml_config:dict):
         task_list.append(task['task_id'])
 
     task_list.sort() 
-    print(task_list)
     if isinstance(yaml_config['envs']['task_dependency'], dict) and \
         yaml_config['envs']['task_dependency']['default_task_dependency'] == True:
         task_dependency = {"task_dependency_type":"default"}
@@ -115,16 +114,20 @@ def configure_arg_parser():
                         default="standard_dag",
                         help="Template to use for DAG generation")
     
-    parser.add_argument('--dynamic_config',
-                        required=True,
-                        help="Is this a dynamically configurable DAG during run-time?")
+    # parser.add_argument('--dynamic_config',
+    #                     required=True,
+    #                     help="Is this a dynamically configurable DAG during run-time?")
     
     parser.add_argument('--composer_env_name', 
-                        help="Provide the composer env name from where the config values will be picked when dynamic_config=false")
+                        required=True,
+                        help="Provide the composer env name from where to read config file for variable values")
     
     options = parser.parse_args()
 
-    if (options.dynamic_config =="false" or options.dynamic_config =="False") and options.composer_env_name is None:
+    # if (options.dynamic_config =="false" or options.dynamic_config =="False") and options.composer_env_name is None:
+    #     parser.error('Requiring composer_env_name if dynamic_config is false')
+
+    if options.composer_env_name is None:
         parser.error('Requiring composer_env_name if dynamic_config is false')
 
     return options
@@ -140,7 +143,7 @@ def generate_dag_file(args):
 
     config_file = args.config_file
     dag_template = args.dag_template
-    dynamic_config = args.dynamic_config
+    # dynamic_config = args.dynamic_config
     composer_env_name = args.composer_env_name
    
     with open(config_file,'r') as f:
@@ -153,6 +156,7 @@ def generate_dag_file(args):
         dag_id = config_data['dag_id']
         python_functions = import_python_functions(yaml_config=config_data)
         task_dependency = validate_create_task_dependency(yaml_config=config_data)
+        var_configs = config_data["envs"]["variables"]
 
         print("Config file: {}".format(config_path))
         print("Generating DAG for: {}".format(dag_template))
@@ -162,7 +166,7 @@ def generate_dag_file(args):
         # variable from the config file that is input to the program.
         env = Environment(loader=FileSystemLoader(template_dir))
         template = env.get_template(dag_template+".template")
-        framework_config_values = {'dynamic_config': dynamic_config, 'composer_env_name': composer_env_name}
+        framework_config_values = {'var_configs': var_configs, 'composer_env_name': composer_env_name}
 
         dag_path = os.path.abspath(os.path.join(os.path.dirname(config_path), '..', "dags"))
         if not os.path.exists(dag_path):

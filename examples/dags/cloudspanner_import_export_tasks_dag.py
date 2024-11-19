@@ -29,28 +29,7 @@ from airflow.providers.google.cloud.operators.spanner import SpannerQueryDatabas
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
-composer_env_bucket = os.environ["GCS_BUCKET"]
-env_configs = {}
 
-def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename("config.yaml")
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    return config
-
-run_time_config_data = load_config_from_gcs(
-    bucket_name=composer_env_bucket,
-    source_blob_name="dag_configs/cloudspanner_import_export_config.yaml"
-)
-
-for env, configs in run_time_config_data['envs'].items():
-    if env == composer_env_name and type(configs) is dict:
-        env_configs = configs
 
 def upload_gcs_to_spanner(
   project_id:str, instance_id:str, database_id:str, bucket_name:str, file_name:str, table_name:str,columns:list):
@@ -162,23 +141,23 @@ with dag:
             task_id = 'gcs_to_spanner',
             python_callable = upload_gcs_to_spanner,
             op_kwargs ={
-            'project_id': env_configs.get('cc_var_gcp_project_id'),
-            'instance_id': env_configs.get('cc_var_spanner_instance_id'),
-            'database_id': env_configs.get('cc_var_spanner_databse_id'),
-            'bucket_name': env_configs.get('cc_var_import_gcs_bucket_name'),
-            'file_name': env_configs.get('cc_var_import_gcs_file_name'),
-            'table_name': env_configs.get('cc_var_spanner_table'),
-            'columns': env_configs.get('cc_var_spanner_table_columns'),
+            'project_id' : "composer-templates-dev",
+            'instance_id' : "composer-templates-spannerdb",
+            'database_id' : "dev-spannerdb",
+            'bucket_name' : "composer-templates-dev-input-files",
+            'file_name' : "spanner_input/sample_data_spanner.csv",
+            'table_name' : "Products",
+            'columns' : ["ProductId", "ProductName", "Description", "Price", "LastModified"],
             },
             trigger_rule = 'all_done',
         )
 
     delete_results_from_spanner = SpannerQueryDatabaseInstanceOperator (
             task_id = 'delete_results_from_spanner',
-            instance_id = env_configs.get('cc_var_spanner_instance_id'),
-            database_id = env_configs.get('cc_var_spanner_databse_id'),
-            query = env_configs.get('cc_var_spanner_sql_query'),
-            project_id = env_configs.get('cc_var_gcp_project_id'),
+            instance_id = "composer-templates-spannerdb",
+            database_id = "dev-spannerdb",
+            query = "DELETE FROM Products WHERE LastModified \u003c TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 DAY);",
+            project_id = "composer-templates-dev",
             trigger_rule = 'all_done',
         )
 
@@ -186,13 +165,14 @@ with dag:
             task_id = 'spanner_to_gcs',
             python_callable = export_spanner_to_gcs,
             op_kwargs ={
-            'project_id': env_configs.get('cc_var_gcp_project_id'),
-            'instance_id': env_configs.get('cc_var_spanner_instance_id'),
-            'database_id': env_configs.get('cc_var_spanner_databse_id'),
-            'bucket_name': env_configs.get('cc_var_export_gcs_bucket_name'),
-            'file_name': env_configs.get('cc_var_export_gcs_file_name'),
-            'sql_query': env_configs.get('cc_var_spanner_sql_export_query'),
+            'project_id' : "composer-templates-dev",
+            'instance_id' : "composer-templates-spannerdb",
+            'database_id' : "dev-spannerdb",
+            'bucket_name' : "hmh_backup",
+            'file_name' : "spanner_output/product_data_output.csv",
+            'sql_query' : "SELECT * FROM Products ;",
             },
             trigger_rule = 'all_done',
         )
+    
     start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs

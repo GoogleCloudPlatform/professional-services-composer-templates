@@ -40,18 +40,18 @@ from {{ value }} import {{ key }}
 
 {%- set config_values = namespace() %}
 {%- for key, value in framework_config_values.items() %}
-{%- if key == "dynamic_config" %}
-{%- set config_values.dynamic_config = value %}
-{%- endif %}
 {%- if key == "composer_env_name" %}
 {%- set config_values.composer_env_name = value %}
+{%- endif %}
+{%- if key == "var_configs" %}
+{%- set config_values.var_configs = value %}
 {%- endif %}
 {%- endfor %}
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
-{%- if config_values.dynamic_config == "True" or config_values.dynamic_config == "true" %}
+{%- if config_values.var_configs["import_variables_from_file"] == True and config_values.var_configs["variables_file_name"] is defined %}
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -68,12 +68,16 @@ def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, A
 
 run_time_config_data = load_config_from_gcs(
     bucket_name=composer_env_bucket,
-    source_blob_name="dag_configs/{{ config_data["config_file_name"] }}"
+    source_blob_name="dag_variables/{{ config_values.var_configs["variables_file_name"] }}"
 )
 
-for env, configs in run_time_config_data['envs'].items():
-    if env == composer_env_name and type(configs) is dict:
+for env, configs in run_time_config_data["{{ config_values.var_configs["environment"] }}"].items():
+    if type(configs) is dict:
         env_configs = configs
+
+
+{%- elif config_values.var_configs["import_variables_from_file"] == False %}
+{% set env_configs = config_values.var_configs["config_variables"] %}
 
 {%- endif %}
 
@@ -188,10 +192,10 @@ with dag:
         {%- if value[:7] != "cc_var_" %}
             {{ key }} = '{{ value }}',
         {%- else %}        
-        {%- if config_values.dynamic_config == "True" or config_values.dynamic_config == "true" %}
+        {%- if config_values.var_configs["import_variables_from_file"] == True %}
             {{ key }} = env_configs.get('{{ value }}'),
         {%- else %}
-            {{ key }} = {{ config_data['envs'][config_values.composer_env_name][value]|tojson }},
+            {{ key }} = {{ env_configs[value]|tojson }},
         {%- endif %}
         {%- endif %}
         {%- endif %}
@@ -201,7 +205,9 @@ with dag:
             {%- for key, value in value.items() %}
             {%- if value[:7] != "cc_var_" %}
             '{{ key }}' : '{{ value }}',
-            {%- else %}
+            {%- elif value[:7] == "cc_var_" and config_values.var_configs["import_variables_from_file"] == False %}
+            '{{ key }}' : {{ env_configs[value]|tojson }},
+            {%- elif config_values.var_configs["import_variables_from_file"] == True %}
             '{{ key }}': env_configs.get('{{ value }}'),
             {%- endif %}
             {%- endfor %}
@@ -235,8 +241,10 @@ with dag:
 
     {%- if task_dependency['task_dependency_type'] == "custom" %}
     {% for dependency in task_dependency['task_dependency'].split('|') %}
+    
     {{ dependency }}
     {%- endfor -%}
     {%- elif task_dependency['task_dependency_type'] == "default" %}
+    
     {{ item.value ~ " >> " ~ final_tasks_seq|join(" >> ") }}
     {%- endif %}
