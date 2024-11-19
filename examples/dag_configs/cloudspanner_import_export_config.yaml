@@ -197,6 +197,16 @@ envs:
         #   python_callable: pull_xcom
         #   trigger_rule : 'all_done'
         #   depends_on: export_sales_reporting_table_to_gcs
+    task_dependency:
+      default_task_dependency: True
+      custom_task_dependency: "start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs|\
+                              [start >> gcs_to_spanner] >> spanner_to_gcs|\
+                              start >> [delete_results_from_spanner,spanner_to_gcs]"
+      # use the sample below to test the chaining task dependency
+      # default_task_dependency: False
+      # custom_task_dependency: "start >> vilo >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs|\
+      #                         [start >> gcs_to_spanner] >> spanner_to_gcs|\
+      #                         start >> [delete_results_from_spanner, spanner_to_gcs]"
     composer-templates-dev:
         cc_var_gcp_project_id: composer-templates-dev
         cc_var_spanner_instance_id: composer-templates-spannerdb

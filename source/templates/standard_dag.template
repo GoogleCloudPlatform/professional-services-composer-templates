@@ -232,5 +232,11 @@ with dag:
         {{ "Unexpected error occurred" }}
       {%- endif -%}
     {%- endfor %}
-    
+
+    {%- if task_dependency['task_dependency_type'] == "custom" %}
+    {% for dependency in task_dependency['task_dependency'].split('|') %}
+    {{ dependency }}
+    {%- endfor -%}
+    {%- elif task_dependency['task_dependency_type'] == "default" %}
     {{ item.value ~ " >> " ~ final_tasks_seq|join(" >> ") }}
+    {%- endif %}

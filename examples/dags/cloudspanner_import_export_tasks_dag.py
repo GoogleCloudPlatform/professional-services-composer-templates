@@ -195,5 +195,4 @@ with dag:
             },
             trigger_rule = 'all_done',
         )
-    
     start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs
