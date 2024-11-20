@@ -71,9 +71,8 @@ run_time_config_data = load_config_from_gcs(
     source_blob_name="dag_variables/{{ config_values.var_configs["variables_file_name"] }}"
 )
 
-for env, configs in run_time_config_data["{{ config_values.var_configs["environment"] }}"].items():
-    if type(configs) is dict:
-        env_configs = configs
+if type(run_time_config_data["{{ config_values.var_configs["environment"] }}"]) is dict:
+    env_configs = run_time_config_data["{{ config_values.var_configs["environment"] }}"]
 
 
 {%- elif config_values.var_configs["import_variables_from_file"] == False %}
@@ -85,10 +84,13 @@ for env, configs in run_time_config_data["{{ config_values.var_configs["environm
 {# Do nothing #}
 {%- elif python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == True %}
 
+
+
 {{ python_functions['functions'] }}
 
 {%- elif python_functions is defined and python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == False %}
 {%- for function_name, function_data in python_functions['functions'].items() %}
+
 
 {{ function_data['code'] }}
 
