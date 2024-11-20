@@ -47,7 +47,7 @@ max_active_runs:
 catchup: False
 # mandatory; enclose values within quotes
 schedule_interval: "None"        
-tags: ["spanner","test"]
+tags: ["spanner","test","v1.1"]
 owner:
 
 # mandatory
@@ -61,11 +61,18 @@ default_args:
     # minutes
     retry_delay: 1                  
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
+#Python functions used by Python operator or any other custom operator.
+# If there are no function keep it empty
+# Logical flow:
+  # 1. Define values for import_functions_from_file (Acceptable values are True or False)
+  # 2. If import_functions_from_file is True, copy the full file path for reading python \
+  #   function (ONLY supports local file path)
+  # 3. If import_functions_from_file is False, add your custom function in the same YAML \
+  #   as shown in the example. The DAG will be generated accordingly
+custom_python_functions:
   import_functions_from_file: False
-  functions_file_path: <yourdirectory>/cloudspanneroperator_functions.txt
-  import_functions:
+  functions_file_path: /Users/devanshmodi/vscode/professional-services-composer-templates/examples/python_function_files/cloudspanneroperator_functions.txt
+  custom_defined_functions:
     upload_gcs_to_spanner:
       description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
       code: |
@@ -160,7 +167,7 @@ functions:
     #       print(f"Pulled value from XCom: {pulled_value}")
     #       return pulled_value
 
-#Environment specific configs
+#Tasks specific configs
 # mandatory
 envs:
     # mandatory
@@ -175,7 +182,7 @@ envs:
           op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
           trigger_rule : 'all_done'
           depends_on: None
-        #cc_operator_description: Delete old data from Cloud spanner table (just an example to showcase SpannerQueryDatabaseInstanceOperator)
+        #cc_operator_description: Delete old data from Cloud spanner table (an example to showcase SpannerQueryDatabaseInstanceOperator)
         - task_id: delete_results_from_spanner
           task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
           instance_id: cc_var_spanner_instance_id
@@ -198,17 +205,34 @@ envs:
         #   trigger_rule : 'all_done'
         #   depends_on: export_sales_reporting_table_to_gcs
     task_dependency:
-      default_task_dependency: True
+    # Define task_dependency as per your use case
+    # Logical flow:
+      # 1. Define values for default_task_dependency (Acceptable values are True or False).\
+          # If default_task_dependency is not set appropriately it will raise error exception.
+      # 2. If default_task_dependency is True, it will work add task as per depends_on configuration \
+          # set under each task
+      # 3. If default_task_dependency is False, add your custom task dependency the code will validate as per\
+          # given tasks and will add the dependency while generating the DAG.
+      # 4. Seperate your custom task dependency using "|" as a seperator and other dependencies in new \
+          # line as shown in the example below 
+      default_task_dependency: False
       custom_task_dependency: "start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs|\
                               [start >> gcs_to_spanner] >> spanner_to_gcs|\
                               start >> [delete_results_from_spanner,spanner_to_gcs]"
-      # use the sample below to test the chaining task dependency
-      # default_task_dependency: False
-      # custom_task_dependency: "start >> vilo >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs|\
-      #                         [start >> gcs_to_spanner] >> spanner_to_gcs|\
-      #                         start >> [delete_results_from_spanner, spanner_to_gcs]"
-    variables:
-      import_variables_from_file: False
+    task_variables:
+    # Define task_variables used by your tasks
+    # If you are reading variables from .yaml file. \
+    # PLEASE UPLOAD FILES TO gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<YOUR_FILE_NAME>.yaml
+    # Logical flow:
+      # 1. Define values for import_variables_from_file (Acceptable values are True or False).\
+          # Else it won't import variables appropriately
+      # 2. If import_variables_from_file is True, it will read the YAML and \
+          # will read variables from GCS during airflow execution
+      # 3. Define values for environment as per your YAML and it will \
+          # read variables from GCS according to environment mentioned in YAML.
+      # 4. If import_variables_from_file is False the variables will be imported \
+          # as deined under config_variables
+      import_variables_from_file: True
       variables_file_name: composer_variables_test.yaml
       environment: dev
       config_variables:
