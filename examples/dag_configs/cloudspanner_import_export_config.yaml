@@ -71,7 +71,7 @@ default_args:
   #   as shown in the example. The DAG will be generated accordingly
 custom_python_functions:
   import_functions_from_file: False
-  functions_file_path: /Users/devanshmodi/vscode/professional-services-composer-templates/examples/python_function_files/cloudspanneroperator_functions.txt
+  functions_file_path: <YOUR LOCAL DIRECTORY>/cloudspanneroperator_python_functions.txt
   custom_defined_functions:
     upload_gcs_to_spanner:
       description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
@@ -233,7 +233,7 @@ envs:
       # 4. If import_variables_from_file is False the variables will be imported \
           # as deined under config_variables
       import_variables_from_file: True
-      variables_file_name: composer_variables_test.yaml
+      variables_file_name: cloudspanner_tasks_variables.yaml
       environment: dev
       config_variables:
         cc_var_gcp_project_id: composer-templates-dev
