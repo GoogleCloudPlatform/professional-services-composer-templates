@@ -25,6 +25,7 @@ Here's a list of the operators that have been pretested:
 | CloudSQLExecuteQueryOperator     |  Performs DDL or DML SQL queries in Google Cloud SQL instance. |
 | CloudSQLImportInstanceOperator     |  Import data into a Cloud SQL instance from Cloud Storage. |
 | CloudSQLExportInstanceOperator     |  Export data from a Cloud SQL instance to a Cloud Storage bucket. |
+| CountTokensOperator     |  Pre-determine the number of tokens of a provided prompt. |
 | DataflowTemplatedJobStartOperator     |  Start a Templated Cloud Dataflow job; the parameters of the operation will be passed to the job. |
 | DataflowStartFlexTemplateOperator     |  Starts flex templates with the Dataflow pipeline. |
 | BeamRunJavaPipelineOperator     |  Starts dataflow Java job |
@@ -46,8 +47,10 @@ Here's a list of the operators that have been pretested:
 | GCSObjectsWithPrefixExistenceSensor     |  Checks for the existence of GCS objects at a given prefix, passing matches via XCom. |
 | GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
 | GCSDeleteObjectsOperator     |  Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket. |
+| GenerativeModelGenerateContentOperator     |  Generate content via a Generative Model like Google Gemini. |
 | PythonOperator     |  Creates and runs custom defined Python Functions. |
 | SpannerQueryDatabaseInstanceOperator     |  Executes an arbitrary DML query (INSERT, UPDATE, DELETE) on Cloud Spanner. |
+| SupervisedFineTuningTrainOperator     |  Fine-tune a generative model and deploy it to an endpoint. |
 
 
 ### DAG Generation
