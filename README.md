@@ -127,14 +127,12 @@ custom_python_functions:
 # Tasks specific configs
 # mandatory
 tasks:
-  # cc_operator_description: Ingest data from GCS to Cloud Spanner
   - task_id: gcs_to_spanner
     task_type: airflow.operators.python_operator.PythonOperator
     python_callable: upload_gcs_to_spanner
     op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
     trigger_rule : 'all_done'
     depends_on: None
-  # cc_operator_description: Delete old data from Cloud spanner table (an example to showcase SpannerQueryDatabaseInstanceOperator)
   - task_id: delete_results_from_spanner
     task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
     instance_id: cc_var_spanner_instance_id

@@ -45,19 +45,26 @@ dag_id: cloudspanner_import_export_tasks_dag
 description: "Sample example to import/export data in and out of cloud spanner."
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
-schedule_interval: "None"        
+schedule: 
 tags: ["spanner","test","v1.1"]
-owner:
+start_date:
+end_date:
+max_active_tasks: 5
+dagrun_timeout: timedelta(hours=3)
+is_paused_upon_creation: True
 
 # mandatory
 default_args:
   owner: 'test'
-  retries:
+  depends_on_past: False
+  retries: 3
   email_on_failure: False
   email_on_retry: False
-  email:                          
-  retry_delay: 1  # minutes               
+  email: ["test@example.com"]                       
+  retry_delay: 1  # minutes   
+  mode: "reschedule"
+  poke_interval: 120
+  sla: 60            
 
 # Define Python functions to be added in your Airflow DAG
 # - import_functions_from_file:  
@@ -150,6 +157,16 @@ custom_python_functions:
 
           print(f"Data exported to {file_name} in GCS successfully.")
           return {"output_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}"}
+    print_args:
+      code: |
+        def print_args(*args):
+          """Prints all arguments passed to the function.
+
+          Args:
+            *args: Any number of arguments.
+          """
+          for arg in args:
+            print(arg)
 
 
 # Tasks specific configs
@@ -178,12 +195,11 @@ tasks:
     op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_export_gcs_bucket_name,"file_name":cc_var_export_gcs_file_name,"sql_query":cc_var_spanner_sql_export_query}
     trigger_rule : 'all_done'
     depends_on: delete_results_from_spanner
-  # # cc_operator_description: print the GCS uri where the file is written.
-  # - task_id: print_gcs_uri
-  #   task_type: airflow.operators.python_operator.PythonOperator
-  #   python_callable: pull_xcom
-  #   trigger_rule : 'all_done'
-  #   depends_on: export_sales_reporting_table_to_gcs
+  - task_id: sample_python
+    task_type: airflow.operators.python_operator.PythonOperator
+    python_callable: print_args
+    op_args: ['Composer', 'template', cc_var_gcp_project_id]
+    depends_on: spanner_to_gcs
 
 
 task_dependency:
@@ -202,6 +218,7 @@ task_dependency:
     - "start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs"
     - "[start >> gcs_to_spanner] >> spanner_to_gcs"
     - "start >> [delete_results_from_spanner, spanner_to_gcs]"
+    - spanner_to_gcs >> sample_python
 
 
 task_variables:

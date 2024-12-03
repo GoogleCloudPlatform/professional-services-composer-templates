@@ -129,26 +129,46 @@ def export_spanner_to_gcs(
   print(f"Data exported to {file_name} in GCS successfully.")
   return {"output_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}"}
 
+def print_args(*args):
+  """Prints all arguments passed to the function.
+
+  Args:
+    *args: Any number of arguments.
+  """
+  for arg in args:
+    print(arg)
+
 default_args = {
-        "owner": 'test',
-        "retries": 1,
-        "email_on_failure": False,
-        "email_on_retry": False,
-        "retry_delay": timedelta(minutes=1),
-        "sla": timedelta(minutes=55),
-        "execution_timeout": timedelta(minutes=60),
+    "owner": 'test',
+    "depends_on_past": False,
+    "retries": 3,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "email": ['test@example.com'],
+    "retry_delay": timedelta(minutes=1),
+    "mode": 'reschedule',
+    "poke_interval": 120,
+    "sla": timedelta(minutes=60),
+    "retries": 3,
+    "retry_delay": timedelta(minutes=1),
+    "sla": timedelta(minutes=60),
+    "execution_timeout": timedelta(minutes=60)
 }
 
 dag = DAG(
-        dag_id='cloudspanner_import_export_tasks_dag',
-        default_args = default_args,
-        schedule_interval=None,
-        description='Sample example to import/export data in and out of cloud spanner.',
-        max_active_runs=1,
-        catchup=False,
-        is_paused_upon_creation=True,
-        tags=['spanner', 'test', 'v1.1'],
-        start_date=airflow.utils.dates.days_ago(0)
+    dag_id='cloudspanner_import_export_tasks_dag',
+    default_args=default_args,
+    schedule='@once',
+    description='Sample example to import/export data in and out of cloud spanner.',
+    max_active_runs=1,
+    catchup=False,
+    is_paused_upon_creation=True,
+    dagrun_timeout=timedelta(hours=3),
+    tags=['spanner', 'test', 'v1.1'],
+    start_date=datetime(2024, 12, 1),
+    end_date=datetime(2024, 12, 1),
+    max_active_tasks=5,
+    is_paused_upon_creation=True
 )
 
 with dag:
@@ -192,6 +212,16 @@ with dag:
             },
             trigger_rule = 'all_done',
         )
+
+    sample_python = PythonOperator (
+            task_id = 'sample_python',
+            python_callable = print_args,
+            op_args =[
+            'Composer',
+            'template',
+            env_configs.get('cc_var_gcp_project_id'),
+            ],
+        )
     
     
     start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs
@@ -199,3 +229,5 @@ with dag:
     [start >> gcs_to_spanner] >> spanner_to_gcs
     
     start >> [delete_results_from_spanner, spanner_to_gcs]
+    
+    spanner_to_gcs >> sample_python
