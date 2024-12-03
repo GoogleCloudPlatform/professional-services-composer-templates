@@ -1,0 +1,10 @@
+composer-templates-dev:
+    cc_var_project_id: composer-templates-dev
+    cc_var_region: us-central1
+    cc_var_pro_model: gemini-1.5-pro-002
+    cc_var_system_instruction: Always respond in plain-text only.
+    cc_var_sample_prompt: ["Summarize the following article. Article: To make a classic spaghetti carbonara, start by bringing a large pot of salted water to a boil. While the water is heating up, cook pancetta or guanciale in a skillet with olive oil over medium heat until it's crispy and golden brown. Once the pancetta is done, remove it from the skillet and set it aside. In the same skillet, whisk together eggs, grated Parmesan cheese, and black pepper to make the sauce. When the pasta is cooked al dente, drain it and immediately toss it in the skillet with the egg mixture, adding a splash of the pasta cooking water to create a creamy sauce."]
+    cc_var_deterministic_gen_config:
+        top_k: 1
+        top_p: 0.0
+        temperature: 0.1
