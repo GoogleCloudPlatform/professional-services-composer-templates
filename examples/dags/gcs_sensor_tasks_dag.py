@@ -23,34 +23,14 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.sensors.gcs import GCSObjectsWithPrefixExistenceSensor
 from airflow.operators.bash import BashOperator
 from airflow.providers.google.cloud.operators.gcs import GCSDeleteObjectsOperator
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
-composer_env_bucket = os.environ["GCS_BUCKET"]
-env_configs = {}
 
-def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename("config.yaml")
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    return config
-
-run_time_config_data = load_config_from_gcs(
-    bucket_name=composer_env_bucket,
-    source_blob_name="dag_configs/gcs_sensor_tasks_config.yaml"
-)
-
-for env, configs in run_time_config_data['envs'].items():
-    if env == composer_env_name and type(configs) is dict:
-        env_configs = configs
 
 default_args = {
         "owner": 'test',
@@ -79,22 +59,22 @@ with dag:
 
     gcs_file_sensor = GCSObjectsWithPrefixExistenceSensor (
             task_id = 'gcs_file_sensor',
-            bucket = env_configs.get('cc_var_gcs_bucket_name'),
-            prefix = env_configs.get('cc_var_gcs_bucket_prefix'),
+            bucket = "sample-bq-test-2",
+            prefix = "gcs-sensor/",
             mode = 'poke',
             trigger_rule = 'all_done',
         )
 
     print_file_names_from_gcs = BashOperator (
             task_id = 'print_file_names_from_gcs',
-            bash_command = env_configs.get('cc_var_bash_command'),
+            bash_command = "echo {{ ti.xcom_pull(task_ids=\"gcs_file_sensor\") }}",
             trigger_rule = 'all_done',
         )
 
     gcs_delete_file = GCSDeleteObjectsOperator (
             task_id = 'gcs_delete_file',
-            bucket_name = env_configs.get('cc_var_gcs_bucket_name'),
-            prefix = env_configs.get('cc_var_gcs_bucket_prefix'),
+            bucket_name = "sample-bq-test-2",
+            prefix = "gcs-sensor/",
             trigger_rule = 'all_done',
         )
     

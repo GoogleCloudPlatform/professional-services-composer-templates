@@ -23,6 +23,7 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.gcs import GCSCreateBucketOperator
 from airflow.providers.google.cloud.operators.gcs import GCSSynchronizeBucketsOperator
 from airflow.providers.google.cloud.operators.gcs import GCSListObjectsOperator
@@ -30,6 +31,7 @@ from airflow.providers.google.cloud.operators.gcs import GCSDeleteBucketOperator
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
+
 
 default_args = {
         "owner": 'test',

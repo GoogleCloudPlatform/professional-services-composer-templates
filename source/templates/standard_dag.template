@@ -28,9 +28,9 @@ from google.cloud import spanner
 
 {%- set task_libraries = dict() %}
 
-{%- for n in range(config_data['envs']['default']['tasks']|length) %}
-{%- set key = '.'.join(config_data['envs']['default']['tasks'][n]['task_type'].split('.')[0:-1]) %}
-{%- set value = '.'.join(config_data['envs']['default']['tasks'][n]['task_type'].split('.')[-1:]) %}
+{%- for n in range(config_data['tasks']|length) %}
+{%- set key = '.'.join(config_data['tasks'][n]['task_type'].split('.')[0:-1]) %}
+{%- set value = '.'.join(config_data['tasks'][n]['task_type'].split('.')[-1:]) %}
 {%- set _dummy = task_libraries.__setitem__(value,key) %}
 {%- endfor %}
 
@@ -40,9 +40,6 @@ from {{ value }} import {{ key }}
 
 {%- set config_values = namespace() %}
 {%- for key, value in framework_config_values.items() %}
-{%- if key == "composer_env_name" %}
-{%- set config_values.composer_env_name = value %}
-{%- endif %}
 {%- if key == "var_configs" %}
 {%- set config_values.var_configs = value %}
 {%- endif %}
@@ -51,7 +48,7 @@ from {{ value }} import {{ key }}
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
-{%- if config_values.var_configs["import_variables_from_file"] == True and config_values.var_configs["variables_file_name"] is defined %}
+{%- if config_values.var_configs["import_from_file"] == True and config_values.var_configs["file_name"] is defined %}
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -68,33 +65,24 @@ def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, A
 
 run_time_config_data = load_config_from_gcs(
     bucket_name=composer_env_bucket,
-    source_blob_name="dag_variables/{{ config_values.var_configs["variables_file_name"] }}"
+    source_blob_name="dag_variables/{{ config_values.var_configs["file_name"] }}"
 )
 
 if type(run_time_config_data["{{ config_values.var_configs["environment"] }}"]) is dict:
     env_configs = run_time_config_data["{{ config_values.var_configs["environment"] }}"]
 
 
-{%- elif config_values.var_configs["import_variables_from_file"] == False %}
-{% set env_configs = config_values.var_configs["config_variables"] %}
+{%- elif config_values.var_configs["import_from_file"] == False %}
+{% set env_configs = config_values.var_configs["variables"] %}
 
 {%- endif %}
 
-{%- if python_functions['add_functions'] == False %}
-{# Do nothing #}
-{%- elif python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == True %}
+{%- if python_functions.add_functions %}
+    {%- for function_code in python_functions.functions %}
 
+{{ function_code }}
 
-
-{{ python_functions['functions'] }}
-
-{%- elif python_functions is defined and python_functions['add_functions'] == True and python_functions['import_functions_from_file'] == False %}
-{%- for function_name, function_data in python_functions['functions'].items() %}
-
-
-{{ function_data['code'] }}
-
-{%- endfor %}
+    {%- endfor %}
 {%- endif %}
 
 default_args = {
@@ -181,12 +169,12 @@ with dag:
     {%- set item = namespace(value='start') %}
     {%- set depen_task_dct = dict() -%}
 
-    {%- for n in range(config_data['envs']['default']['tasks']|length) %}
+    {%- for n in range(config_data['tasks']|length) %}
 
-    {{ config_data['envs']['default']['tasks'][n]['task_id'] }} = {{ config_data['envs']['default']['tasks'][n]['task_type'].split('.')[-1:][0] }} (
-        {%- for key in config_data['envs']['default']['tasks'][n].keys() %}
+    {{ config_data['tasks'][n]['task_id'] }} = {{ config_data['tasks'][n]['task_type'].split('.')[-1:][0] }} (
+        {%- for key in config_data['tasks'][n].keys() %}
         {%- if key != 'depends_on' and key != 'task_type' %}
-            {%- set value = config_data['envs']['default']['tasks'][n][key] -%}
+            {%- set value = config_data['tasks'][n][key] -%}
         {%- if value is string %}  
         {%- if key== "python_callable" %}
             {{ key }} = {{ value }},
@@ -194,7 +182,7 @@ with dag:
         {%- if value[:7] != "cc_var_" %}
             {{ key }} = '{{ value }}',
         {%- else %}        
-        {%- if config_values.var_configs["import_variables_from_file"] == True %}
+        {%- if config_values.var_configs["import_from_file"] == True %}
             {{ key }} = env_configs.get('{{ value }}'),
         {%- else %}
             {{ key }} = {{ env_configs[value]|tojson }},
@@ -207,9 +195,9 @@ with dag:
             {%- for key, value in value.items() %}
             {%- if value[:7] != "cc_var_" %}
             '{{ key }}' : '{{ value }}',
-            {%- elif value[:7] == "cc_var_" and config_values.var_configs["import_variables_from_file"] == False %}
+            {%- elif value[:7] == "cc_var_" and config_values.var_configs["import_from_file"] == False %}
             '{{ key }}' : {{ env_configs[value]|tojson }},
-            {%- elif config_values.var_configs["import_variables_from_file"] == True %}
+            {%- elif config_values.var_configs["import_from_file"] == True %}
             '{{ key }}': env_configs.get('{{ value }}'),
             {%- endif %}
             {%- endfor %}
@@ -220,7 +208,7 @@ with dag:
         {%- endif %}
         {%- endfor %}
         )
-    {%- set _ = depen_task_dct.update({config_data['envs']['default']['tasks'][n]['task_id']: config_data['envs']['default']['tasks'][n]['depends_on']}) -%}
+    {%- set _ = depen_task_dct.update({config_data['tasks'][n]['task_id']: config_data['tasks'][n]['depends_on']}) -%}
     {%- endfor %}
 
     {%- set depen_task_group_dict = dict() -%}
@@ -242,7 +230,7 @@ with dag:
     {%- endfor %}
 
     {%- if task_dependency['task_dependency_type'] == "custom" %}
-    {% for dependency in task_dependency['task_dependency'].split('|') %}
+    {% for dependency in task_dependency['task_dependency'] %}
     
     {{ dependency }}
     {%- endfor -%}

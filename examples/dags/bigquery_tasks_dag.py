@@ -23,6 +23,7 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateEmptyDatasetOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateEmptyTableOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryGetDataOperator
@@ -31,6 +32,30 @@ from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQue
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
+
+
+def transformation(data):
+  """
+  Sample function as an example to perform custom transformation.
+
+  Args:
+    data: Sample data on which we can perform any transformation.
+  
+  Returns:
+    The data converted into a string format.
+  """
+  print("Printing sample payload from transformation function: {}".format(data))
+  output = str(data)
+  return output
+
+def pull_xcom(**kwargs):
+  """
+  Pulls a value from XCom and prints it.
+  """
+  ti = kwargs['ti']
+  pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  print(f"Pulled value from XCom: {pulled_value}")
+  return pulled_value
 
 default_args = {
         "owner": 'test',

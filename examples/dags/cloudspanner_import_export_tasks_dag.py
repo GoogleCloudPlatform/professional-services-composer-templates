@@ -45,12 +45,11 @@ def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, A
 
 run_time_config_data = load_config_from_gcs(
     bucket_name=composer_env_bucket,
-    source_blob_name="dag_variables/composer_variables_test.yaml"
+    source_blob_name="dag_variables/cloudspanner_tasks_variables.yaml"
 )
 
 if type(run_time_config_data["dev"]) is dict:
     env_configs = run_time_config_data["dev"]
-
 
 def upload_gcs_to_spanner(
   project_id:str, instance_id:str, database_id:str, bucket_name:str, file_name:str, table_name:str,columns:list):
@@ -93,8 +92,6 @@ def upload_gcs_to_spanner(
   print(f"Data from {file_name} uploaded to {table_name} successfully.")
   return {"input_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}", "spanner_databse_table":f"{database_id}"+":"+f"{table_name}"}
 
-
-
 def export_spanner_to_gcs(
   project_id, instance_id, database_id, bucket_name, file_name, sql_query):
   """Exports data from Cloud Spanner to a CSV file in GCS."""
@@ -131,7 +128,6 @@ def export_spanner_to_gcs(
 
   print(f"Data exported to {file_name} in GCS successfully.")
   return {"output_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}"}
-
 
 default_args = {
         "owner": 'test',
@@ -202,4 +198,4 @@ with dag:
     
     [start >> gcs_to_spanner] >> spanner_to_gcs
     
-    start >> [delete_results_from_spanner,spanner_to_gcs]
+    start >> [delete_results_from_spanner, spanner_to_gcs]

@@ -22,74 +22,118 @@ import re
 
 config_file = ''
 
-# Generate Airflow DAG python file by reading the config (YAML) file
-# that is passed to the program. generate function dictonary
-# which can be pass to DAG template for importing python functions into DAG
-def import_python_functions(yaml_config:dict):
+def import_python_functions(yaml_config: dict) -> dict:
     """
-    :description : This function is used to generate python function dictonary \
-                    which can be pass to DAG template for importing python functions \
-                    into DAG from YAML config or import from .txt file.
-    :param dict yaml_config: YAML configuration file for the task
-    :return dict : add_functions flag to add functions or not, \
-                   import_functions_from_file Flag with True or False\
-                   functions either string or dict based on import_functions_from_file Flag
+    Generate a dictionary for importing Python functions into a DAG.
+
+    This function determines how to import Python functions based on the
+    provided YAML configuration. It can import functions from a specified
+    file, from the YAML configuration, or from both. It also checks if
+    'custom_defined_functions' exists and is not empty. It preserves
+    indentation from the YAML "code" blocks.
+
+    Args:
+        yaml_config (dict): YAML configuration for the task.
+
+    Returns:
+        dict: A dictionary containing:
+            - add_functions (bool): Flag indicating whether to add functions.
+            - functions (list): A list of function code strings with preserved indentation.
     """
-    if isinstance(yaml_config['custom_python_functions'], dict) and \
-        yaml_config['custom_python_functions']['import_functions_from_file'] == True and \
-        yaml_config['custom_python_functions']['functions_file_path'] is not None:
-        print(f"Importing Python Functions: reading python functions from file {str((yaml_config['custom_python_functions']['functions_file_path']))}")
-        with open(str((yaml_config['custom_python_functions']['functions_file_path'])), 'r') as file:
-            python_functions = {"add_functions":True,"import_functions_from_file":True,"functions":file.read()}
-    elif isinstance(yaml_config['custom_python_functions'], dict) and \
-        yaml_config['custom_python_functions']['import_functions_from_file'] == False:
-        print(f"Importing Python Functions: reading python functions from given YAML")
-        python_functions = {"add_functions":True,"import_functions_from_file":False,"functions":yaml_config['custom_python_functions']['custom_defined_functions']}
+    functions = []
+    try:
+        custom_functions = yaml_config['custom_python_functions']
+        if not isinstance(custom_functions, dict):
+            raise TypeError("'custom_python_functions' should be a dictionary.")
+
+        if custom_functions.get('import_functions_from_file', False) and custom_functions.get('functions_file_path'):
+            file_path = custom_functions['functions_file_path']
+            print(f"Importing Python Functions: reading python functions from file {file_path}")
+            with open(file_path, 'r') as file:
+                functions.append(file.read())
+
+        defined_functions = custom_functions.get('custom_defined_functions')
+        if defined_functions:
+            for i, func_data in enumerate(defined_functions.values()):
+                if 'code' in func_data and func_data['code'].strip():
+                    # Split the code into lines and preserve indentation
+                    code_lines = func_data['code'].splitlines()
+                    functions.append('\n'.join(code_lines))  # Join the lines back
+                    # functions.append(func_data['code'])
+
+    except (KeyError, TypeError) as e:
+        print(f"Importing Python Functions: Error processing YAML: {e}")
+
+    if functions:
+        return {
+            "add_functions": True,
+            "functions": functions
+        }
     else:
-        print("Importing Python Functions: criteria doesn't match skipping to import functions")
-        python_functions = {"add_functions":False}
-    return python_functions
+        print("Importing Python Functions: Skipping function import.")
+        return {"add_functions": False}
 
 
-# Generate Airflow DAG python file by reading the config (YAML) file
-# that is passed to the program. This section validates and create task 
-# dependency for the DAG
-def validate_create_task_dependency(yaml_config:dict):
+def validate_create_task_dependency(yaml_config: dict) -> dict:
+    """Validate and create task dependency for the DAG.
+
+    Args:
+        yaml_config (dict): YAML configuration file for the task.
+
+    Returns:
+        dict: task_dependency_type (custom or default) to create task dependency.
+
+    Raises:
+        ValueError: If default_task_dependency is not boolean or 
+                    if custom_task_dependency doesn't match config tasks.
     """
-    :description : This function is used to validate and create task dependency for the DAG.
-    :param dict yaml_config: YAML configuration file for the task
-    :return dict : task_dependency_type custom or default to create task dependency
-    """
-    if isinstance(yaml_config['envs']['task_dependency'], dict) and \
-          yaml_config['envs']['task_dependency']['default_task_dependency'] not in [True, False]:
-        raise Exception("unappropriate or missing default_task_dependency value. acceptable values are either True or False")
+    try:
+        default_dependency = yaml_config['task_dependency']['default_task_dependency']
+        if default_dependency not in (True, False):
+            raise ValueError("Invalid default_task_dependency value. "
+                             "Acceptable values are True or False")
+    except KeyError:
+        raise ValueError("Missing 'task_dependency' or 'default_task_dependency' in yaml_config")
 
-    task_list=list()
-    task_list.append("start")
-    for task in yaml_config['envs']['default']['tasks']:
+    task_list = ["start"]
+    for task in yaml_config['tasks']:
         task_list.append(task['task_id'])
+    task_list.sort()
 
-    task_list.sort() 
-    if isinstance(yaml_config['envs']['task_dependency'], dict) and \
-        yaml_config['envs']['task_dependency']['default_task_dependency'] == True:
-        task_dependency = {"task_dependency_type":"default"}
-    elif isinstance(yaml_config['envs']['task_dependency'], dict) and \
-        yaml_config['envs']['task_dependency']['default_task_dependency'] == False:
-        print("Task Validation: validating tasks for custom dependency")
-        defined_dependency = yaml_config['envs']['task_dependency']['custom_task_dependency']
-        cleaned_dependency = defined_dependency.replace(">>","@").replace("[","").replace("]","").replace(",","@").replace("|","@").replace(" ","")
-        custom_tasks = list(set(cleaned_dependency.split("@")))
-        custom_tasks.sort()
-        
-        if len(custom_tasks) != len(task_list) or custom_tasks != task_list:
-            print(f"list of given config task: str({task_list})")
-            print(f"list of given custom task: str({custom_tasks})")
-            raise Exception("Validation error: total task mention in custom_task_dependency doesn't match with total tasks given in the config file")
-        else:
-            print("Task Validation: task validation successful")
-            task_dependency = {"task_dependency_type":"custom","task_dependency":defined_dependency}
-    return task_dependency
+    if default_dependency:
+        return {"task_dependency_type": "default"}
 
+    # Custom dependency
+    try:
+        custom_dependency = yaml_config['task_dependency']['custom_task_dependency']
+    except KeyError:
+        raise ValueError("Missing 'custom_task_dependency' in yaml_config")
+    
+    print("Task Validation: validating tasks for custom dependency")
+    
+    task_dependency = []
+    custom_tasks = set()
+    for dependency_chain in custom_dependency:
+        # Remove the quotes from the dependency chain
+        dependency_chain = dependency_chain.strip('"')  
+        task_dependency.append(dependency_chain)  
+
+        # Extract tasks 
+        task_names = re.findall(r'[\w_]+', dependency_chain)  
+        custom_tasks.update(task_names)
+
+
+    # task_dependency = "\n".join(task_dependency)
+    distinct_custom_tasks = sorted(list(custom_tasks))
+
+    if distinct_custom_tasks != task_list:
+        print(f"List of config tasks: {task_list}")
+        print(f"List of custom tasks: {distinct_custom_tasks}")
+        raise ValueError("Validation error: Tasks in custom_task_dependency "
+                         "don't match config tasks")
+
+    print("Task Validation: task validation successful")
+    return {"task_dependency_type": "custom", "task_dependency": task_dependency}
 
 # Read configuration file from command line
 # Please refer to the documentation (README.md) to see how to author a
@@ -110,16 +154,8 @@ def configure_arg_parser():
     parser.add_argument('--dag_template',                         
                         default="standard_dag",
                         help="Template to use for DAG generation")
-      
-    parser.add_argument('--composer_env_name', 
-                        required=True,
-                        help="Provide the composer env name from where to read config file for variable values")
     
     options = parser.parse_args()
-
-    if options.composer_env_name is None:
-        parser.error("composer_env_name required but not passed as a part of argument")
-
     return options
 
 
@@ -133,8 +169,6 @@ def generate_dag_file(args):
 
     config_file = args.config_file
     dag_template = args.dag_template
-    # dynamic_config = args.dynamic_config
-    composer_env_name = args.composer_env_name
    
     with open(config_file,'r') as f:
         config_data = yaml.safe_load(f)
@@ -151,7 +185,7 @@ def generate_dag_file(args):
         task_dependency = validate_create_task_dependency(yaml_config=config_data)
         
         # Importing variables from variables.YAML or from YAML config as per configuration 
-        var_configs = config_data["envs"]["task_variables"]
+        var_configs = config_data["task_variables"]
 
         print("Config file: {}".format(config_path))
         print("Generating DAG for: {}".format(dag_template))
@@ -161,7 +195,7 @@ def generate_dag_file(args):
         # variable from the config file that is input to the program.
         env = Environment(loader=FileSystemLoader(template_dir))
         template = env.get_template(dag_template+".template")
-        framework_config_values = {'var_configs': var_configs, 'composer_env_name': composer_env_name}
+        framework_config_values = {'var_configs': var_configs}
 
         dag_path = os.path.abspath(os.path.join(os.path.dirname(config_path), '..', "dags"))
         if not os.path.exists(dag_path):
@@ -173,7 +207,7 @@ def generate_dag_file(args):
                                       python_functions=python_functions, task_dependency=task_dependency))
 
         print("Finished generating file: {}".format(generate_file_name))
-        print("Number of tasks generated: {}".format(str(len(config_data["envs"]["default"]['tasks']))))
+        print("Number of tasks generated: {}".format(str(len(config_data['tasks']))))
 
 if __name__ == '__main__':
     args = configure_arg_parser()
