@@ -186,30 +186,3 @@ Below code samples will produce a Python file for the DAG, using the same name a
 ```sh
 python3 source/generate_dag.py --config_file examples/dag_configs/cloudspanner_import_export_config.yaml
 ```
-
-
-## DAG Deployment
-Use the following command to deploy generated DAG and its respective configuration file onto your hosted Google Cloud Composer enviornment.
-
-Below parameters are supplied for deployment
-
-| Parameter | Description |
-| :---     | :--- |
-| gcp_project_id | Google Cloud Platform Project ID |
- gcp_composer_env_id | Google Cloud Composer Environment Name  
-| composer_env_location | Google Cloud Composer Environment location
-| dag_file | Full file path of the python DAG file to be uploaded E.g '/Users/abc/main/dags/cloudsql_tasks_dag.py'  
-| dynamic_dag_flag | Dynamic DAG flag which states that the DAG uses config file allowed values are True or False  
-| dynamic_dag_config_file | Full file path of the YAML DAG config file to be uploaded E.g 'Users/abc/main/dag_configs/cloudsql_tasks_config.yaml'
-
-The command serves as an example, please update the parameters values as per your Google Cloud Platform configurations.  
-
-```sh
- python3 ./source/deploy_dag.py \
- -gcp_project_id='composer-templates-dev' \
- -gcp_composer_env_name='composer-templates-dev' \
- -composer_env_location='us-central1' \
- -dag_file='/Users/abc/main/dags/cloudsql_tasks_dag.py' \
- -dynamic_dag_flag=False \
- -dynamic_dag_config_file='/Users/abc/main/dag_configs/cloudsql_tasks_config.yaml'
- ```
