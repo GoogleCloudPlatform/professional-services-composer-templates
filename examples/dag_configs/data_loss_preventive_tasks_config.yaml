@@ -44,68 +44,82 @@ dag_id: data_loss_preventive_deidentify_tasks_job
 description:
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
 schedule_interval: "None"        
 tags: ["test"]
 owner:
 
+
 # mandatory
 default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    # ex - [test@test.com]
-    email:                          
-    # minutes
-    retry_delay: 1                  
+  owner: 'test'
+  retries:
+  email_on_failure: False
+  email_on_retry: False
+  email:                          
+  retry_delay: 1   # minutes               
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  # perform_transformation:
-  #   description: Sample function as an example to perform custom transformation.
-  #   code: |
-  #     def transformation(data):
-  #       """
-  #       Sample function as an example to perform custom transformation.
 
-  #       Args:
-  #         data: Sample data on which we can perform any transformation.
-        
-  #       Returns:
-  #         The data converted into a string format.
-  #       """
-  #       print("Printing sample payload from transformation function: {}".format(data))
-  #       output = str(data)
-  #       return output
-  # pull_xcom:
-  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-  #   code: |
-  #     def pull_xcom(**kwargs):
-  #       """
-  #       Pulls a value from XCom and prints it.
-  #       """
-  #       ti = kwargs['ti']
-  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-  #       print(f"Pulled value from XCom: {pulled_value}")
-  #       return pulled_value
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  custom_defined_functions:
+    # perform_transformation:
+    #   description: Sample function as an example to perform custom transformation.
+    #   code: |
+    #     def transformation(data):
+    #       """
+    #       Sample function as an example to perform custom transformation.
 
-#Environment specific configs
+    #       Args:
+    #         data: Sample data on which we can perform any transformation.
+          
+    #       Returns:
+    #         The data converted into a string format.
+    #       """
+    #       print("Printing sample payload from transformation function: {}".format(data))
+    #       output = str(data)
+    #       return output
+    # pull_xcom:
+    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+    #   code: |
+    #     def pull_xcom(**kwargs):
+    #       """
+    #       Pulls a value from XCom and prints it.
+    #       """
+    #       ti = kwargs['ti']
+    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+    #       print(f"Pulled value from XCom: {pulled_value}")
+    #       return pulled_value
+
+
+# Tasks specific configs
 # mandatory
-envs:
-    # mandatory
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
-        - task_id: trigger_dlp_deindentify_job
-          task_type: airflow.providers.google.cloud.operators.dlp.CloudDLPCreateDLPJobOperator
-          project_id: cc_var_gcp_project_id
-          inspect_job: cc_var_dlp_job_payload
-          trigger_rule : 'all_done'
-          upstream_task: None
-    composer-templates-dev:
-        # Below connection_id is retrieved from Google Cloud Secret Manager. 
-        cc_var_gcp_project_id : composer-templates-dev
-        cc_var_dlp_job_payload: {"storage_config": {"cloud_storage_options": {"file_set": {"url": "gs://composer-templates-dev-input-files/dlp_operator_input/"}, "file_types": ["TEXT_FILE"]}}, "inspect_config": {"info_types": [{"name": "PHONE_NUMBER"}, {"name": "US_SOCIAL_SECURITY_NUMBER"}, {"name": "EMAIL_ADDRESS"}], "min_likelihood": "VERY_UNLIKELY"}, "inspect_template_name": "projects/composer-templates-dev/locations/global/inspectTemplates/demo-composer-template-inspect-test", "actions": [{"save_findings": {"output_config": {"table": {"project_id": "composer-templates-dev", "dataset_id": "test_dataset", "table_id": "dlp_googleapis_2024_11_02_5447016892596828032"}}}}, {"deidentify": {"transformation_config": {"deidentify_template": "projects/composer-templates-dev/locations/global/deidentifyTemplates/demo-composer-template-test"}, "cloud_storage_output": "gs://hmh_backup/deidentified-data_output/"}}]}
+tasks:
+  #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
+  - task_id: trigger_dlp_deindentify_job
+    task_type: airflow.providers.google.cloud.operators.dlp.CloudDLPCreateDLPJobOperator
+    project_id: cc_var_gcp_project_id
+    inspect_job: cc_var_dlp_job_payload
+    trigger_rule : 'all_done'
+    depends_on: None
+
+
+task_dependency:
+  default_task_dependency: True
+
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: False  # Boolean to enable/disable file import
+  file_name: data_loss_preventive_tasks_config.yaml
+  environment: dev  # Environment to load from the file
+
+  # Define variables here if not importing from file.
+  variables:
+    # Below connection_id is retrieved from Google Cloud Secret Manager. 
+    cc_var_gcp_project_id : composer-templates-dev
+    cc_var_dlp_job_payload: {"storage_config": {"cloud_storage_options": {"file_set": {"url": "gs://composer-templates-dev-input-files/dlp_operator_input/"}, "file_types": ["TEXT_FILE"]}}, "inspect_config": {"info_types": [{"name": "PHONE_NUMBER"}, {"name": "US_SOCIAL_SECURITY_NUMBER"}, {"name": "EMAIL_ADDRESS"}], "min_likelihood": "VERY_UNLIKELY"}, "inspect_template_name": "projects/composer-templates-dev/locations/global/inspectTemplates/demo-composer-template-inspect-test", "actions": [{"save_findings": {"output_config": {"table": {"project_id": "composer-templates-dev", "dataset_id": "test_dataset", "table_id": "dlp_googleapis_2024_11_02_5447016892596828032"}}}}, {"deidentify": {"transformation_config": {"deidentify_template": "projects/composer-templates-dev/locations/global/deidentifyTemplates/demo-composer-template-test"}, "cloud_storage_output": "gs://hmh_backup/deidentified-data_output/"}}]}

@@ -28,28 +28,7 @@ from airflow.providers.google.cloud.operators.dlp import CloudDLPCreateDLPJobOpe
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
-composer_env_bucket = os.environ["GCS_BUCKET"]
-env_configs = {}
 
-def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename("config.yaml")
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    return config
-
-run_time_config_data = load_config_from_gcs(
-    bucket_name=composer_env_bucket,
-    source_blob_name="dag_configs/data_loss_preventive_tasks_config.yaml"
-)
-
-for env, configs in run_time_config_data['envs'].items():
-    if env == composer_env_name and type(configs) is dict:
-        env_configs = configs
 
 default_args = {
         "owner": 'test',
@@ -78,8 +57,8 @@ with dag:
 
     trigger_dlp_deindentify_job = CloudDLPCreateDLPJobOperator (
             task_id = 'trigger_dlp_deindentify_job',
-            project_id = env_configs.get('cc_var_gcp_project_id'),
-            inspect_job = env_configs.get('cc_var_dlp_job_payload'),
+            project_id = "composer-templates-dev",
+            inspect_job = {"actions": [{"save_findings": {"output_config": {"table": {"dataset_id": "test_dataset", "project_id": "composer-templates-dev", "table_id": "dlp_googleapis_2024_11_02_5447016892596828032"}}}}, {"deidentify": {"cloud_storage_output": "gs://hmh_backup/deidentified-data_output/", "transformation_config": {"deidentify_template": "projects/composer-templates-dev/locations/global/deidentifyTemplates/demo-composer-template-test"}}}], "inspect_config": {"info_types": [{"name": "PHONE_NUMBER"}, {"name": "US_SOCIAL_SECURITY_NUMBER"}, {"name": "EMAIL_ADDRESS"}], "min_likelihood": "VERY_UNLIKELY"}, "inspect_template_name": "projects/composer-templates-dev/locations/global/inspectTemplates/demo-composer-template-inspect-test", "storage_config": {"cloud_storage_options": {"file_set": {"url": "gs://composer-templates-dev-input-files/dlp_operator_input/"}, "file_types": ["TEXT_FILE"]}}},
             trigger_rule = 'all_done',
         )
     

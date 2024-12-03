@@ -18,98 +18,112 @@ dag_id: gcs_tasks_dag
 description:
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
 schedule_interval: "None"
 tags: ["test"]
 owner:
 
+
 # mandatory
 default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    # ex - [test@test.com]
-    email:                          
-    # minutes
-    retry_delay: 1
+  owner: 'test'
+  retries:
+  email_on_failure: False
+  email_on_retry: False
+  email:                          
+  retry_delay: 1    # minutes
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  # perform_transformation:
-  #   description: Sample function as an example to perform custom transformation.
-  #   code: |
-  #     def transformation(data):
-  #       """
-  #       Sample function as an example to perform custom transformation.
 
-  #       Args:
-  #         data: Sample data on which we can perform any transformation.
-        
-  #       Returns:
-  #         The data converted into a string format.
-  #       """
-  #       print("Printing sample payload from transformation function: {}".format(data))
-  #       output = str(data)
-  #       return output
-  # pull_xcom:
-  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-  #   code: |
-  #     def pull_xcom(**kwargs):
-  #       """
-  #       Pulls a value from XCom and prints it.
-  #       """
-  #       ti = kwargs['ti']
-  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-  #       print(f"Pulled value from XCom: {pulled_value}")
-  #       return pulled_value
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  custom_defined_functions:
+    # perform_transformation:
+    #   description: Sample function as an example to perform custom transformation.
+    #   code: |
+    #     def transformation(data):
+    #       """
+    #       Sample function as an example to perform custom transformation.
 
-#Environment specific configs
+    #       Args:
+    #         data: Sample data on which we can perform any transformation.
+          
+    #       Returns:
+    #         The data converted into a string format.
+    #       """
+    #       print("Printing sample payload from transformation function: {}".format(data))
+    #       output = str(data)
+    #       return output
+    # pull_xcom:
+    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+    #   code: |
+    #     def pull_xcom(**kwargs):
+    #       """
+    #       Pulls a value from XCom and prints it.
+    #       """
+    #       ti = kwargs['ti']
+    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+    #       print(f"Pulled value from XCom: {pulled_value}")
+    #       return pulled_value
+
+
+# Tasks specific configs
 # mandatory
-envs:
-    # mandatory
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        #cc_operator_description: Creates a new bucket.
-        - task_id: create_bucket
-          task_type: airflow.providers.google.cloud.operators.gcs.GCSCreateBucketOperator
-          project_id: cc_var_project_id
-          bucket_name: cc_var_bucket_name
-          #resource:
-          storage_class: MULTI_REGIONAL
-          labels: {"env": "dev", "team": "airflow"}
-          #gcp_conn_id: 
-          #impersonation_chain:
-          trigger_rule : 'none_failed'
-          upstream_task: None
-        #cc_operator_description: Synchronizes the contents of the buckets or bucket's directories in the Google Cloud Services.
-        - task_id: synchronize_bucket
-          task_type: airflow.providers.google.cloud.operators.gcs.GCSSynchronizeBucketsOperator
-          source_bucket: cc_var_public_bucket
-          source_object: "shakespeare/rose.txt"
-          destination_bucket: cc_var_bucket_name
-          destination_object: "shakespeare/rose.txt"
-          trigger_rule : 'none_failed'
-          upstream_task: create_bucket
-        #cc_operator_description: List all objects from the bucket filtered by given string prefix and delimiter in name or match_glob.
-        - task_id: list_objects
-          task_type: airflow.providers.google.cloud.operators.gcs.GCSListObjectsOperator
-          bucket : cc_var_bucket_name
-          prefix: shakespeare/
-          #match_glob: "**/*/.txt"
-          #gcp_conn_id: google_cloud_conn_id
-          trigger_rule : 'none_failed'
-          upstream_task: synchronize_bucket
-        #cc_operator_description: Deletes bucket from a Google Cloud Storage.
-        - task_id: delete_bucket
-          task_type: airflow.providers.google.cloud.operators.gcs.GCSDeleteBucketOperator
-          bucket_name: cc_var_bucket_name
-          trigger_rule: 'all_done'
-          upstream_task: list_objects
-    composer-templates-dev:
-        cc_var_project_id: composer-templates-dev
-        cc_var_bucket_name: test-bucket12345654321
-        cc_var_public_bucket: pub
+tasks:
+  #cc_operator_description: Creates a new bucket.
+  - task_id: create_bucket
+    task_type: airflow.providers.google.cloud.operators.gcs.GCSCreateBucketOperator
+    project_id: cc_var_project_id
+    bucket_name: cc_var_bucket_name
+    #resource:
+    storage_class: MULTI_REGIONAL
+    labels: {"env": "dev", "team": "airflow"}
+    #gcp_conn_id: 
+    #impersonation_chain:
+    trigger_rule : 'none_failed'
+    depends_on: None
+  #cc_operator_description: Synchronizes the contents of the buckets or bucket's directories in the Google Cloud Services.
+  - task_id: synchronize_bucket
+    task_type: airflow.providers.google.cloud.operators.gcs.GCSSynchronizeBucketsOperator
+    source_bucket: cc_var_public_bucket
+    source_object: "shakespeare/rose.txt"
+    destination_bucket: cc_var_bucket_name
+    destination_object: "shakespeare/rose.txt"
+    trigger_rule : 'none_failed'
+    depends_on: create_bucket
+  #cc_operator_description: List all objects from the bucket filtered by given string prefix and delimiter in name or match_glob.
+  - task_id: list_objects
+    task_type: airflow.providers.google.cloud.operators.gcs.GCSListObjectsOperator
+    bucket : cc_var_bucket_name
+    prefix: shakespeare/
+    #match_glob: "**/*/.txt"
+    #gcp_conn_id: google_cloud_conn_id
+    trigger_rule : 'none_failed'
+    depends_on: synchronize_bucket
+  #cc_operator_description: Deletes bucket from a Google Cloud Storage.
+  - task_id: delete_bucket
+    task_type: airflow.providers.google.cloud.operators.gcs.GCSDeleteBucketOperator
+    bucket_name: cc_var_bucket_name
+    trigger_rule: 'all_done'
+    depends_on: list_objects
+
+
+task_dependency:
+  default_task_dependency: True
+
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: False  # Boolean to enable/disable file import
+  file_name: gcs_tasks_config.yaml
+  environment: dev  # Environment to load from the file
+
+  # Define variables here if not importing from file.
+  variables:
+    cc_var_project_id: composer-templates-dev
+    cc_var_bucket_name: test-bucket12345654321
+    cc_var_public_bucket: pub
         

@@ -18,113 +18,118 @@ dag_id: bigquery_tasks_dag
 description:
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
 schedule_interval: '@hourly'        
 tags: ["test"]
 owner:
 
 # mandatory
 default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    # ex - [test@test.com]
-    email:                          
-    # minutes
-    retry_delay: 1              
+  owner: 'test'
+  retries:
+  email_on_failure: False
+  email_on_retry: False
+  email:                          
+  retry_delay: 1    # minutes         
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  # perform_transformation:
-  #   description: Sample function as an example to perform custom transformation.
-  #   code: |
-  #     def transformation(data):
-  #       """
-  #       Sample function as an example to perform custom transformation.
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  custom_defined_functions:
+    perform_transformation:
+      description: Sample function as an example to perform custom transformation.
+      code: |
+        def transformation(data):
+          """
+          Sample function as an example to perform custom transformation.
 
-  #       Args:
-  #         data: Sample data on which we can perform any transformation.
-        
-  #       Returns:
-  #         The data converted into a string format.
-  #       """
-  #       print("Printing sample payload from transformation function: {}".format(data))
-  #       output = str(data)
-  #       return output
-  # pull_xcom:
-  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-  #   code: |
-  #     def pull_xcom(**kwargs):
-  #       """
-  #       Pulls a value from XCom and prints it.
-  #       """
-  #       ti = kwargs['ti']
-  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-  #       print(f"Pulled value from XCom: {pulled_value}")
-  #       return pulled_value
+          Args:
+            data: Sample data on which we can perform any transformation.
+          
+          Returns:
+            The data converted into a string format.
+          """
+          print("Printing sample payload from transformation function: {}".format(data))
+          output = str(data)
+          return output
+    pull_xcom:
+      description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+      code: |
+        def pull_xcom(**kwargs):
+          """
+          Pulls a value from XCom and prints it.
+          """
+          ti = kwargs['ti']
+          pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+          print(f"Pulled value from XCom: {pulled_value}")
+          return pulled_value
 
 
 
-#Environment specific configs
+# Tasks specific configs
 # mandatory
-envs:
-    # mandatory
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        #cc_operator_description: Create a new dataset for your Project in BigQuery.
-        - task_id: create_bq_dataset
-          task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyDatasetOperator
-          dataset_id: 'test_dataset'
-          project_id: cc_var_project_id
-          upstream_task: None
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Creates a new table in the specified BigQuery dataset, optionally with schema.
-        - task_id: create_bq_table
-          task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyTableOperator
-          dataset_id: 'test_dataset'
-          table_id: 'test_table'
-          schema_fields: [{"name": "emp_name", "type": "STRING", "mode": "REQUIRED"},{"name": "salary", "type": "INTEGER", "mode": "NULLABLE"}]
-          upstream_task: create_bq_dataset
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Fetch data and return it, either from a BigQuery table, or results of a query job.
-        - task_id: get_data_from_bq_table
-          task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryGetDataOperator
-          dataset_id: 'test_dataset'
-          table_id: 'test_table'
-          upstream_task: create_bq_dataset
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Transfers a BigQuery table to a Google Cloud Storage bucket.
-        - task_id: export_to_gcs
-          task_type: airflow.providers.google.cloud.transfers.bigquery_to_gcs.BigQueryToGCSOperator
-          source_project_dataset_table: cc_var_export_to_gcs_source_project_dataset_table
-          destination_cloud_storage_uris: cc_var_export_to_gcs_destination_cloud_storage_uris
-          export_format: csv
-          field_delimiter: ','
-          print_header: True
-          upstream_task: get_data_from_bq_table
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Executes BigQuery SQL queries in a specific BigQuery database.
-        - task_id: bq_query_execute
-          task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryExecuteQueryOperator
-          use_legacy_sql: False
-          write_disposition: WRITE_TRUNCATE
-          allow_large_results: True
-          destination_dataset_table: cc_var_destination_dataset_table
-          sql: cc_var_sql
-          upstream_task: export_to_gcs
-          trigger_rule : 'none_failed'
-    composer-templates-dev:
-        cc_var_export_to_gcs_destination_cloud_storage_uris: "gs://hmh_composer_demo/export_files/covid.csv"
-        cc_var_export_to_gcs_source_project_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
-        cc_var_destination_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
-        cc_var_sql: 'SELECT * FROM `composer-templates-dev.hmh_demo.covid` WHERE case_reported_date = "2021-08-18"'
-        cc_var_project_id: composer-templates-dev
-    composer-templates-prod:
-        cc_var_export_to_gcs_destination_cloud_storage_uris: "gs://hmh_composer_demo/export_files/covid.csv"
-        cc_var_export_to_gcs_source_project_dataset_table: composer-templates-prod.hmh_demo.tmp_covid
-        cc_var_destination_dataset_table: composer-templates-prod.hmh_demo.tmp_covid
-        cc_var_sql: 'SELECT * FROM `composer-templates-prod.hmh_demo.covid` WHERE case_reported_date = "2021-08-18"'
-        cc_var_project_id: composer-templates-prod
+tasks:
+  #cc_operator_description: Create a new dataset for your Project in BigQuery.
+  - task_id: create_bq_dataset
+    task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyDatasetOperator
+    dataset_id: 'test_dataset'
+    project_id: cc_var_project_id
+    depends_on: None
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Creates a new table in the specified BigQuery dataset, optionally with schema.
+  - task_id: create_bq_table
+    task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyTableOperator
+    dataset_id: 'test_dataset'
+    table_id: 'test_table'
+    schema_fields: [{"name": "emp_name", "type": "STRING", "mode": "REQUIRED"},{"name": "salary", "type": "INTEGER", "mode": "NULLABLE"}]
+    depends_on: create_bq_dataset
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Fetch data and return it, either from a BigQuery table, or results of a query job.
+  - task_id: get_data_from_bq_table
+    task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryGetDataOperator
+    dataset_id: 'test_dataset'
+    table_id: 'test_table'
+    depends_on: create_bq_dataset
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Transfers a BigQuery table to a Google Cloud Storage bucket.
+  - task_id: export_to_gcs
+    task_type: airflow.providers.google.cloud.transfers.bigquery_to_gcs.BigQueryToGCSOperator
+    source_project_dataset_table: cc_var_export_to_gcs_source_project_dataset_table
+    destination_cloud_storage_uris: cc_var_export_to_gcs_destination_cloud_storage_uris
+    export_format: csv
+    field_delimiter: ','
+    print_header: True
+    depends_on: get_data_from_bq_table
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Executes BigQuery SQL queries in a specific BigQuery database.
+  - task_id: bq_query_execute
+    task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryExecuteQueryOperator
+    use_legacy_sql: False
+    write_disposition: WRITE_TRUNCATE
+    allow_large_results: True
+    destination_dataset_table: cc_var_destination_dataset_table
+    sql: cc_var_sql
+    depends_on: export_to_gcs
+    trigger_rule : 'none_failed'
+
+
+task_dependency:
+  default_task_dependency: True
+
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: False
+  file_name: bigquery_tasks_config.yaml
+  environment: dev  # Environment to load from the file
+
+  # Define variables here if not importing from file.
+  variables:
+    cc_var_export_to_gcs_destination_cloud_storage_uris: "gs://hmh_composer_demo/export_files/covid.csv"
+    cc_var_export_to_gcs_source_project_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
+    cc_var_destination_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
+    cc_var_sql: 'SELECT * FROM `composer-templates-dev.hmh_demo.covid` WHERE case_reported_date = "2021-08-18"'
+    cc_var_project_id: composer-templates-dev
