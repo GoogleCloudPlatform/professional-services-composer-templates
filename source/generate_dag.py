@@ -19,6 +19,7 @@ import json
 import argparse
 import yaml
 import re
+from datetime import timedelta
 
 config_file = ''
 
@@ -177,6 +178,7 @@ def generate_dag_file(args):
         config_path = os.path.abspath(config_file)
         file_dir = os.path.dirname(os.path.abspath(__file__))
         template_dir = os.path.join(file_dir,"templates")
+        config_dir = os.path.join(file_dir,"configs")
         dag_id = config_data['dag_id']
         # Reading python function from .txt file or from YAML config as per configuration 
         python_functions = import_python_functions(yaml_config=config_data)
@@ -193,7 +195,7 @@ def generate_dag_file(args):
         # Uses template renderer to load and render the Jinja template
         # The template file is selected from config_data['dag_template']
         # variable from the config file that is input to the program.
-        env = Environment(loader=FileSystemLoader(template_dir))
+        env = Environment(loader=FileSystemLoader([template_dir, config_dir]))
         template = env.get_template(dag_template+".template")
         framework_config_values = {'var_configs': var_configs}
 
@@ -203,8 +205,11 @@ def generate_dag_file(args):
             
         generate_file_name = os.path.join(dag_path, dag_id + '.py')
         with open(generate_file_name, 'w') as fh:
-            fh.write(template.render(config_data=config_data, framework_config_values=framework_config_values,\
-                                      python_functions=python_functions, task_dependency=task_dependency))
+            fh.write(
+                template.render(
+                    config_data=config_data, framework_config_values=framework_config_values,python_functions=python_functions, task_dependency=task_dependency,
+                )
+            )
 
         print("Finished generating file: {}".format(generate_file_name))
         print("Number of tasks generated: {}".format(str(len(config_data['tasks']))))
