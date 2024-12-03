@@ -87,6 +87,7 @@ default_args: # [Mandatory]
 # - functions: In-place code.
 custom_python_functions:
   # Option 1 - Import your custom python functions from a file
+  # NOTE: Users need to ensure the validty of Python function mentioned in the file
   import_functions_from_file: False
   functions_file_path: <YOUR LOCAL DIRECTORY>/cloudspanneroperator_python_functions.txt
 
