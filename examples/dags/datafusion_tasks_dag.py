@@ -23,6 +23,7 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.datafusion import CloudDataFusionStartPipelineOperator
 
 log = logging.getLogger("airflow")

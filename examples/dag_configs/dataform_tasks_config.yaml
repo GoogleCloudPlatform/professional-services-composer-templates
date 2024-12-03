@@ -18,76 +18,81 @@ dag_id: dataform_tasks_dag
 description:
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
 schedule_interval: "None"
 tags: ["test"]
 owner:
 
 # mandatory
 default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    # ex - [test@test.com]
-    email:                          
-    # minutes
-    retry_delay: 1    
+  owner: 'test'
+  retries:
+  email_on_failure: False
+  email_on_retry: False
+  email:                          
+  retry_delay: 1    # minutes
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  # perform_transformation:
-  #   description: Sample function as an example to perform custom transformation.
-  #   code: |
-  #     def transformation(data):
-  #       """
-  #       Sample function as an example to perform custom transformation.
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  custom_defined_functions:
+    # perform_transformation:
+    #   description: Sample function as an example to perform custom transformation.
+    #   code: |
+    #     def transformation(data):
+    #       """
+    #       Sample function as an example to perform custom transformation.
 
-  #       Args:
-  #         data: Sample data on which we can perform any transformation.
-        
-  #       Returns:
-  #         The data converted into a string format.
-  #       """
-  #       print("Printing sample payload from transformation function: {}".format(data))
-  #       output = str(data)
-  #       return output
-  # pull_xcom:
-  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-  #   code: |
-  #     def pull_xcom(**kwargs):
-  #       """
-  #       Pulls a value from XCom and prints it.
-  #       """
-  #       ti = kwargs['ti']
-  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-  #       print(f"Pulled value from XCom: {pulled_value}")
-  #       return pulled_value
+    #       Args:
+    #         data: Sample data on which we can perform any transformation.
+          
+    #       Returns:
+    #         The data converted into a string format.
+    #       """
+    #       print("Printing sample payload from transformation function: {}".format(data))
+    #       output = str(data)
+    #       return output
+    # pull_xcom:
+    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+    #   code: |
+    #     def pull_xcom(**kwargs):
+    #       """
+    #       Pulls a value from XCom and prints it.
+    #       """
+    #       ti = kwargs['ti']
+    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+    #       print(f"Pulled value from XCom: {pulled_value}")
+    #       return pulled_value
 
-#Environment specific configs
+# Tasks specific configs
 # mandatory
-envs:
-    # mandatory
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        #cc_operator_description: Creates a new CompilationResult in a given project and location.
-        - task_id: create_compilation_result
-          task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateCompilationResultOperator
-          project_id: 'composer-templates-dev'
-          region: 'us-central1'
-          repository_id: 'quickstart-production'
-          compilation_result: {"git_commitish": "main"}
-          upstream_task: None
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Creates a new WorkflowInvocation in a given Repository.
-        - task_id: create_workflow_invocation
-          task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateWorkflowInvocationOperator
-          project_id: 'composer-templates-dev'
-          region: 'us-central1'
-          repository_id: 'quickstart-production'
-          asynchronous: True
-          workflow_invocation: {"compilation_result": "{{ task_instance.xcom_pull('create_compilation_result')['name'] }}"}
-          upstream_task: create_compilation_result
-          trigger_rule : 'none_failed'
+tasks:
+  #cc_operator_description: Creates a new CompilationResult in a given project and location.
+  - task_id: create_compilation_result
+    task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateCompilationResultOperator
+    project_id: 'composer-templates-dev'
+    region: 'us-central1'
+    repository_id: 'quickstart-production'
+    compilation_result: {"git_commitish": "main"}
+    depends_on: None
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Creates a new WorkflowInvocation in a given Repository.
+  - task_id: create_workflow_invocation
+    task_type: airflow.providers.google.cloud.operators.dataform.DataformCreateWorkflowInvocationOperator
+    project_id: 'composer-templates-dev'
+    region: 'us-central1'
+    repository_id: 'quickstart-production'
+    asynchronous: True
+    workflow_invocation: {"compilation_result": "{{ task_instance.xcom_pull('create_compilation_result')['name'] }}"}
+    depends_on: create_compilation_result
+    trigger_rule : 'none_failed'
+
+
+task_dependency:
+  default_task_dependency: True
+
+
+task_variables:
+

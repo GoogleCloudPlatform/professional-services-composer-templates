@@ -17,53 +17,61 @@ import os
 import airflow
 import yaml
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from airflow.models import DAG
 from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.cloud_sql import CloudSQLExecuteQueryOperator
 from airflow.providers.google.cloud.operators.cloud_sql import CloudSQLImportInstanceOperator
 from airflow.providers.google.cloud.operators.cloud_sql import CloudSQLExportInstanceOperator
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
-composer_env_bucket = os.environ["GCS_BUCKET"]
-env_configs = {}
 
-def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename("config.yaml")
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    return config
 
-run_time_config_data = load_config_from_gcs(
-    bucket_name=composer_env_bucket,
-    source_blob_name="dag_configs/cloudsql_tasks_config.yaml"
-)
+def transformation(data):
+  """
+  Sample function as an example to perform custom transformation.
 
-for env, configs in run_time_config_data['envs'].items():
-    if env == composer_env_name and type(configs) is dict:
-        env_configs = configs
+  Args:
+    data: Sample data on which we can perform any transformation.
+  
+  Returns:
+    The data converted into a string format.
+  """
+  print("Printing sample payload from transformation function: {}".format(data))
+  output = str(data)
+  return output
+
+def pull_xcom(**kwargs):
+  """
+  Pulls a value from XCom and prints it.
+  """
+  ti = kwargs['ti']
+  pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  print(f"Pulled value from XCom: {pulled_value}")
+  return pulled_value
 
 default_args = {
         "owner": 'test',
+        "retries": 1,
         "email_on_failure": False,
         "email_on_retry": False,
-        "retry_delay": 30,
+        "retry_delay": timedelta(minutes=1),
+        "sla": timedelta(minutes=55),
+        "execution_timeout": timedelta(minutes=60),
 }
 
 dag = DAG(
         dag_id='cloudsql_tasks_dag',
         default_args = default_args,
         schedule_interval=None,
+        max_active_runs=1,
         catchup=False,
+        is_paused_upon_creation=True,
         tags=['test'],
         start_date=airflow.utils.dates.days_ago(0)
 )
@@ -74,36 +82,36 @@ with dag:
 
     cloud_sql_truncate_sales_table_task = CloudSQLExecuteQueryOperator (
             task_id = 'cloud_sql_truncate_sales_table_task',
-            gcp_cloudsql_conn_id = env_configs.get('cc_var_gcp_cloudsql_conn_id'),
-            sql = env_configs.get('cc_var_truncate_sales_table_sql'),
+            gcp_cloudsql_conn_id = "airflow_composer_template_mysql",
+            sql = "TRUNCATE TABLE sales;",
             trigger_rule = 'all_done',
         )
 
     cloud_sql_import_sales_data_from_gcs = CloudSQLImportInstanceOperator (
             task_id = 'cloud_sql_import_sales_data_from_gcs',
-            instance = env_configs.get('cc_var_composer_instance'),
-            body = env_configs.get('cc_var_import_from_gcs_cloud_sql_body'),
+            instance = "composer-template",
+            body = {"importContext": {"csvImportOptions": {"escapeCharacter": "5C", "fieldsTerminatedBy": "2C", "linesTerminatedBy": "0A", "quoteCharacter": "22", "table": "sales"}, "database": "transactions", "fileType": "CSV", "uri": "gs://hmh_composer_demo/demo_test_csv/daily_sales.csv"}},
             trigger_rule = 'all_done',
         )
 
     cloud_sql_drop_sales_reporting_table_task = CloudSQLExecuteQueryOperator (
             task_id = 'cloud_sql_drop_sales_reporting_table_task',
-            gcp_cloudsql_conn_id = env_configs.get('cc_var_gcp_cloudsql_conn_id'),
-            sql = env_configs.get('cc_var_drop_sales_reporting_table_sql'),
+            gcp_cloudsql_conn_id = "airflow_composer_template_mysql",
+            sql = "DROP TABLE IF EXISTS sales_reporting;",
             trigger_rule = 'all_done',
         )
 
     cloud_sql_create_sales_reporting_table_task = CloudSQLExecuteQueryOperator (
             task_id = 'cloud_sql_create_sales_reporting_table_task',
-            gcp_cloudsql_conn_id = env_configs.get('cc_var_gcp_cloudsql_conn_id'),
-            sql = env_configs.get('cc_var_create_sales_table_sql'),
+            gcp_cloudsql_conn_id = "airflow_composer_template_mysql",
+            sql = "create table sales_reporting as select s.sale_id, p.product_name, p.description, s.order_date, s.city, s.state, p.price as product_price, s.quantity, (s.quantity*p.price) as actual_sell_price, s.total_price as sell_price, s.total_price - (s.quantity*p.price) as difference from sales s inner join products p on s.product_id = p.product_id;",
             trigger_rule = 'all_done',
         )
 
     export_sales_reporting_table_to_gcs = CloudSQLExportInstanceOperator (
             task_id = 'export_sales_reporting_table_to_gcs',
-            instance = env_configs.get('cc_var_composer_instance'),
-            body = env_configs.get('cc_var_export_to_gcs_cloud_sql_body'),
+            instance = "composer-template",
+            body = {"exportContext": {"csvExportOptions": {"selectQuery": "SELECT * FROM sales_reporting;"}, "databases": ["transactions"], "fileType": "CSV", "offload": true, "uri": "gs://hmh_composer_demo/demo_test_csv/sales_report.csv"}},
             trigger_rule = 'all_done',
         )
     

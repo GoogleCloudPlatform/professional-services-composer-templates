@@ -5,10 +5,12 @@ Google Cloud Composer is the de facto data processing orchestration engine in Go
 This is not an officially supported Google product. Please be aware that bugs may lurk, and that we reserve the right to make small backwards-incompatible changes. Feel free to open bugs or feature requests, or contribute directly
 (see [CONTRIBUTING.md](https://github.com/GoogleCloudPlatform/composer-templates/blob/main/CONTRIBUTING.md) for details).
 
+
 ## Install requirements
 ```sh
 python3 -m pip install -r requirements.txt 
 ```
+
 
 ## Usage
 The solution has undergone pre-testing with a variety of operators, as showcased in the examples/dag_configs folder. 
@@ -50,26 +52,47 @@ Here's a list of the operators that have been pretested:
 | SpannerQueryDatabaseInstanceOperator     |  Executes an arbitrary DML query (INSERT, UPDATE, DELETE) on Cloud Spanner. |
 
 
-### DAG Generation
-#### Step 1: Create a configuration file as shown below
+## YAML Sections
+1. **DAG parameters**: Defines general DAG-level settings like dag_id, description, schedule_interval, etc.
+2. **default_args**: Specifies default arguments to be applied to all tasks in the DAG, such as owner, retries, and email notifications.
+3. **custom_python_functions**: Allows you to define custom Python functions to be used within the DAG. 
+4. **tasks**: Contains the definitions of individual tasks within the DAG. Each task is defined with properties like task_id, task_type, and task-specific configurations.
+5. **task_dependency**: Controls the default task dependency behavior.
+6. **task_variables**: Manages the loading and defining of variables used within the DAG. You can either import variables from a YAML file in GCS or define them directly within this section.
+
+
+## DAG Generation
+### Step 1: Create a configuration file as shown below
 
 ```yaml
 ---
 # DAG parameters
-dag_id: bigquery_tasks_dag    # mandatory 
+dag_id: bigquery_tasks_dag    # [Mandatory] 
 catchup: False
-schedule_interval: '@hourly'  # mandatory; enclose values within quotes       
+schedule_interval: '@hourly'  # [Mandatory] Enclose values within quotes       
 tags: ["test"]
 
-default_args: # mandatory
+
+default_args: # [Mandatory]
     owner: 'test'
     email_on_failure: False
     email_on_retry: False
     retry_delay: 30  # seconds               
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  perform_transformation:
+
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  # Option 1 - Import your custom python functions from a file
+  import_functions_from_file: False
+  functions_file_path: <YOUR LOCAL DIRECTORY>/cloudspanneroperator_python_functions.txt
+
+  # Option 2 - Define it directly in the configuration file here
+  custom_defined_functions:
+    upload_gcs_to_spanner:
     description: Sample function as an example to perform custom transformation.
     code: |
       def transformation(data):
@@ -98,72 +121,76 @@ functions:
         return pulled_value
 
 
-# Environment specific configs
-# mandatory - Having a default envs is mandatory.
-# All environment specific variables should be named starting with cc_var_
-envs:
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        - task_id: create_bq_dataset
-          task_type: BigQueryCreateEmptyDatasetOperator
-          dataset_id: 'test_dataset'
-          # Environment specific variable
-          project_id: cc_var_project_id
-          upstream_task: None
-          trigger_rule : 'none_failed'
-        #cc_operator_description: print the GCS uri where the file is written.
-        - task_id: print_gcs_uri
-          task_type: airflow.operators.python_operator.PythonOperator
-          python_callable: pull_xcom
-          trigger_rule : 'all_done'
-          upstream_task: export_sales_reporting_table_to_gcs
-    composer-templates-dev: # This should match the composer environment name in GCP
-      cc_var_project_id: composer-templates-dev
-      # You can use '{{var.value.<variable_name>}}' to retrieve any environment variable value declared under each composer environment.
-      # To read and execute Bash script via BashOperator add the path as shown below
-      # Add your scripts to your composer dag folder on GCS, example gs://composer-templates-dev/dags/scripts while adding this task in YAML file\
-      # add the path for bash script as /home/airflow/gcs/dags/scripts as gs://composer-templates-dev/dags translates to /home/airflow/gcs/dags when deployed
-      # Furthremore, add an extra SPACE after the script path before the end quotes as shown below else BashOperator will throw an error
-      cc_var_bash_script: "bash /home/airflow/gcs/dags/scripts/sample_bash_script.sh "
+# Tasks specific configs
+# mandatory
+tasks:
+  # cc_operator_description: Ingest data from GCS to Cloud Spanner
+  - task_id: gcs_to_spanner
+    task_type: airflow.operators.python_operator.PythonOperator
+    python_callable: upload_gcs_to_spanner
+    op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
+    trigger_rule : 'all_done'
+    depends_on: None
+  # cc_operator_description: Delete old data from Cloud spanner table (an example to showcase SpannerQueryDatabaseInstanceOperator)
+  - task_id: delete_results_from_spanner
+    task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
+    instance_id: cc_var_spanner_instance_id
+    database_id: cc_var_spanner_databse_id
+    query: cc_var_spanner_sql_query 
+    project_id: cc_var_gcp_project_id
+    trigger_rule : 'all_done'
+    depends_on: gcs_to_spanner
 
+
+task_dependency:
+  # Controls task dependency management.
+  # - default_task_dependency: Controls default dependency behavior.
+  #   - If True, tasks will depend on each other based on the `depends_on` configuration within each task definition.
+  #   - If False, use `custom_task_dependency` to define dependencies.
+  # - custom_task_dependency:  Explicitly define dependencies
+  
+  # Examples (Each entry `-` defines a separate dependency chain in the generated Airflow DAG. Must be enclosed with double-quotes):
+  #   - "task_a >> task_b >> task_c"  
+  #   - "[task_a, task_b] >> task_c" 
+  #   - "task_a >> task_b | task_c >> task_d" 
+  default_task_dependency: False
+  custom_task_dependency: 
+    - "start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs"
+    - "[start >> gcs_to_spanner] >> spanner_to_gcs"
+    - "start >> [delete_results_from_spanner, spanner_to_gcs]"
+
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: True  # Boolean to enable/disable file import
+  file_name: cloudspanner_tasks_variables.yaml
+  environment: dev  # Environment to load from the file
+
+  # Define variables here if not importing from file.
+  variables:
+    cc_var_gcp_project_id: composer-templates-dev
+    cc_var_spanner_instance_id: composer-templates-spannerdb
+    cc_var_spanner_databse_id: dev-spannerdb
 ```
 
-#### Step 2: Run the template to generate the DAG .py file
+### Step 2: Run the template to generate the DAG .py file
 
 To generate the DAG, please provide the following command-line arguments tailored to your specific use case:
 
 | Argument | Description |
 | :---     | :--- |
-| --config_file (mandatory)     |  YAML configuration file location. |
-| --dag_template |  Template to consume for DAG generation - default template is standard_dag.template |
-| --dynamic_config (mandatory)     |  Is this DAG dynamically configurable at runtime? Yes. Values for DAG parameters are pulled from the relevant composer environment section of the YAML configuration file. For dynamic configuration, this YAML file needs to be copied to the "dag_configs" folder in Google Cloud Storage (GCS). Please note that this folder will need to be created if it's the first time you're using it. |
-| --composer_env_name (mandatory when dynamic_config = false) |  When dynamic_config is set to false, configuration values will be retrieved from the specified composer environment section of the YAML. If the YAML file lacks environment-specific variables, use the command-line argument --composer_env_name with the value default |
+| --config_file (mandatory)     |  Template configuration YAML file location |
+| --dag_template (optional) |  Template to use for DAG generation. Default template is `standard_dag.template` |
 
 Below code samples will produce a Python file for the DAG, using the same name as the dag_id specified within the YAML file. 
 
-#### Case 1: 
-When dynamic_config is set to false, all DAG parameter values are fetched from the envs:default section of the YAML file. In this scenario, no DAG parameter values can include variables (those starting with cc_var_). The --composer_env_name for this use case should always be default.
-
 ```sh
-python3 source/generate_dag.py --config_file examples/dag_configs/bigquery_tasks_config.yaml --dynamic_config false --composer_env_name default
+python3 source/generate_dag.py --config_file examples/dag_configs/cloudspanner_import_export_config.yaml
 ```
 
-#### Case 2: 
-When dynamic_config is false but DAG parameter values contain variables (like cc_var_), the corresponding values will be sourced from the appropriate composer environment section within the YAML file. 
 
-```sh
-python3 source/generate_dag.py --config_file examples/dag_configs/bigquery_tasks_config.yaml --dynamic_config false --composer_env_name composer-templates-dev
-```
-
-#### Case 3: 
-DAG parameter values are retrieved during run-time
-
-```sh
-python3 source/generate_dag.py --config_file examples/dag_configs/bigquery_tasks_config.yaml --dynamic_config true
-```
-### DAG Deployment
+## DAG Deployment
 Use the following command to deploy generated DAG and its respective configuration file onto your hosted Google Cloud Composer enviornment.
 
 Below parameters are supplied for deployment

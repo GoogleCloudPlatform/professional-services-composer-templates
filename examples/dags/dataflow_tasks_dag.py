@@ -23,6 +23,7 @@ from typing import Any
 from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
+from google.cloud import spanner
 from airflow.providers.google.cloud.operators.dataflow import DataflowTemplatedJobStartOperator
 from airflow.providers.google.cloud.operators.dataflow import DataflowStartFlexTemplateOperator
 from airflow.providers.apache.beam.operators.beam import BeamRunJavaPipelineOperator
@@ -30,6 +31,7 @@ from airflow.providers.google.cloud.operators.dataflow import DataflowStopJobOpe
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
+
 
 default_args = {
         "owner": 'test',
@@ -81,7 +83,7 @@ with dag:
             job_class = 'org.apache.beam.examples.WordCount',
             jar = "gs://us-central1-composer-templa-1ae2c9bc-bucket/dataflow-wordcount-jar/word-count-beam-0.1.jar",
             pipeline_options = {"output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/javadataflowout/", "stagingLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/staging", "tempLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/temp", "usePublicIps": "False"},
-            dataflow_config = {'check_if_running': 'CheckJobRunning.IgnoreJob', 'location': 'us-central1', 'poll_sleep': 10, 'job_name':'start_dataflow_job'},
+            dataflow_config = {'check_if_running': 'CheckJobRunning.IgnoreJob', 'location': 'us-central1', 'poll_sleep': 10, 'job_name': 'start_dataflow_job'},
             trigger_rule = 'none_failed',
         )
 

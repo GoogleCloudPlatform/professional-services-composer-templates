@@ -12,108 +12,123 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 # DAG parameters
 # mandatory
 dag_id: dataflow_tasks_dag
 description:
 max_active_runs:
 catchup: False
-# mandatory; enclose values within quotes
 schedule_interval: "None"
 tags: ["test"]
 owner:
 
+
 # mandatory
 default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    # ex - [test@test.com]
-    email:                          
-    # minutes
-    retry_delay: 1    
+  owner: 'test'
+  retries:
+  email_on_failure: False
+  email_on_retry: False
+  email:                          
+  retry_delay: 1    # minutes
 
-#Python functions used by Python operator. If there are no function keep it blank
-functions:
-  # perform_transformation:
-  #   description: Sample function as an example to perform custom transformation.
-  #   code: |
-  #     def transformation(data):
-  #       """
-  #       Sample function as an example to perform custom transformation.
 
-  #       Args:
-  #         data: Sample data on which we can perform any transformation.
-        
-  #       Returns:
-  #         The data converted into a string format.
-  #       """
-  #       print("Printing sample payload from transformation function: {}".format(data))
-  #       output = str(data)
-  #       return output
-  # pull_xcom:
-  #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-  #   code: |
-  #     def pull_xcom(**kwargs):
-  #       """
-  #       Pulls a value from XCom and prints it.
-  #       """
-  #       ti = kwargs['ti']
-  #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-  #       print(f"Pulled value from XCom: {pulled_value}")
-  #       return pulled_value
+# Define Python functions to be added in your Airflow DAG
+# - import_functions_from_file:  
+#   - True:  Load functions from a local Python file (specify the 'file_path').
+#   - False: Define functions directly within this YAML configuration.
+# - functions: In-place code.
+custom_python_functions:
+  custom_defined_functions:
+    # perform_transformation:
+    #   description: Sample function as an example to perform custom transformation.
+    #   code: |
+    #     def transformation(data):
+    #       """
+    #       Sample function as an example to perform custom transformation.
 
-#Environment specific configs
+    #       Args:
+    #         data: Sample data on which we can perform any transformation.
+          
+    #       Returns:
+    #         The data converted into a string format.
+    #       """
+    #       print("Printing sample payload from transformation function: {}".format(data))
+    #       output = str(data)
+    #       return output
+    # pull_xcom:
+    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
+    #   code: |
+    #     def pull_xcom(**kwargs):
+    #       """
+    #       Pulls a value from XCom and prints it.
+    #       """
+    #       ti = kwargs['ti']
+    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+    #       print(f"Pulled value from XCom: {pulled_value}")
+    #       return pulled_value
+
+
+# Tasks specific configs
 # mandatory
-envs:
-    # mandatory
-    default:
-        # DAG tasks configs
-        # mandatory
-        tasks:
-        #cc_operator_description: Start a Templated Cloud Dataflow job; the parameters of the operation will be passed to the job.
-        - task_id: start_templated_job
-          task_type: airflow.providers.google.cloud.operators.dataflow.DataflowTemplatedJobStartOperator
-          job_name: cc_var_job_name
-          project_id: cc_var_project_id
-          template: gs://dataflow-templates/latest/Word_Count
-          parameters: cc_var_parameters
-          environment: cc_var_environment
-          location: cc_var_region
-          upstream_task: None
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Starts flex templates with the Dataflow pipeline.
-        - task_id: start_flex_templated_job
-          task_type: airflow.providers.google.cloud.operators.dataflow.DataflowStartFlexTemplateOperator
-          location: cc_var_region
-          body: cc_var_flex_body
-          wait_until_finished: True
-          upstream_task: start_templated_job
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Starts dataflow Java job
-        - task_id: start_dataflow_job
-          task_type: airflow.providers.apache.beam.operators.beam.BeamRunJavaPipelineOperator
-          runner: DataflowRunner
-          job_class: "org.apache.beam.examples.WordCount"
-          jar: cc_var_java_beam_jar
-          pipeline_options: cc_var_java_beam_pipeline
-          dataflow_config : {"check_if_running":"CheckJobRunning.IgnoreJob","location":"us-central1","poll_sleep":10,'job_name':'start_dataflow_job'}
-          upstream_task: start_templated_job
-          trigger_rule : 'none_failed'
-        #cc_operator_description: Stops the job with the specified name prefix or Job ID.
-        - task_id: stop_templated_job
-          task_type: airflow.providers.google.cloud.operators.dataflow.DataflowStopJobOperator
-          location: cc_var_region
-          job_name_prefix: cc_var_job_name
-          upstream_task: start_flex_templated_job
-          trigger_rule : 'none_failed'
-    composer-templates-dev:
-        cc_var_project_id: composer-templates-dev
-        cc_var_region: us-central1
-        cc_var_job_name: health-check-dataflow-job-template
-        cc_var_parameters: {"inputFile": "gs://pub/shakespeare/rose.txt","output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/dataflow_output"}
-        cc_var_environment: {"ipConfiguration": "WORKER_IP_PRIVATE"}
-        cc_var_flex_body: {"launchParameter":{"jobName":"test-flex-template","parameters":{"schema":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/schema/my-schema.avsc","outputFileFormat":"avro","outputBucket":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/flexoutput/","inputFileFormat":"csv","inputFileSpec":"gs://cloud-samples-data/bigquery/us-states/*.csv"},"environment":{"ipConfiguration":"WORKER_IP_PRIVATE"},"containerSpecGcsPath":"gs://dataflow-templates/latest/flex/File_Format_Conversion"}}
-        cc_var_java_beam_jar: gs://us-central1-composer-templa-1ae2c9bc-bucket/dataflow-wordcount-jar/word-count-beam-0.1.jar
-        cc_var_java_beam_pipeline: {"output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/javadataflowout/","tempLocation":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/temp","stagingLocation":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/staging","usePublicIps": "False" }
+tasks:
+  #cc_operator_description: Start a Templated Cloud Dataflow job; the parameters of the operation will be passed to the job.
+  - task_id: start_templated_job
+    task_type: airflow.providers.google.cloud.operators.dataflow.DataflowTemplatedJobStartOperator
+    job_name: cc_var_job_name
+    project_id: cc_var_project_id
+    template: gs://dataflow-templates/latest/Word_Count
+    parameters: cc_var_parameters
+    environment: cc_var_environment
+    location: cc_var_region
+    depends_on: None
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Starts flex templates with the Dataflow pipeline.
+  - task_id: start_flex_templated_job
+    task_type: airflow.providers.google.cloud.operators.dataflow.DataflowStartFlexTemplateOperator
+    location: cc_var_region
+    body: cc_var_flex_body
+    wait_until_finished: True
+    depends_on: start_templated_job
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Starts dataflow Java job
+  - task_id: start_dataflow_job
+    task_type: airflow.providers.apache.beam.operators.beam.BeamRunJavaPipelineOperator
+    runner: DataflowRunner
+    job_class: "org.apache.beam.examples.WordCount"
+    jar: cc_var_java_beam_jar
+    pipeline_options: cc_var_java_beam_pipeline
+    dataflow_config : {"check_if_running":"CheckJobRunning.IgnoreJob","location":"us-central1","poll_sleep":10,'job_name':'start_dataflow_job'}
+    depends_on: start_templated_job
+    trigger_rule : 'none_failed'
+  #cc_operator_description: Stops the job with the specified name prefix or Job ID.
+  - task_id: stop_templated_job
+    task_type: airflow.providers.google.cloud.operators.dataflow.DataflowStopJobOperator
+    location: cc_var_region
+    job_name_prefix: cc_var_job_name
+    depends_on: start_flex_templated_job
+    trigger_rule : 'none_failed'
+
+
+task_dependency:
+  default_task_dependency: True
+
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: False  # Boolean to enable/disable file import
+  file_name: dataflow_tasks_config.yaml
+  environment: dev  # Environment to load from the file
+
+  # Define variables here if not importing from file.
+  variables:
+    cc_var_project_id: composer-templates-dev
+    cc_var_region: us-central1
+    cc_var_job_name: health-check-dataflow-job-template
+    cc_var_parameters: {"inputFile": "gs://pub/shakespeare/rose.txt","output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/dataflow_output"}
+    cc_var_environment: {"ipConfiguration": "WORKER_IP_PRIVATE"}
+    cc_var_flex_body: {"launchParameter":{"jobName":"test-flex-template","parameters":{"schema":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/schema/my-schema.avsc","outputFileFormat":"avro","outputBucket":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/flexoutput/","inputFileFormat":"csv","inputFileSpec":"gs://cloud-samples-data/bigquery/us-states/*.csv"},"environment":{"ipConfiguration":"WORKER_IP_PRIVATE"},"containerSpecGcsPath":"gs://dataflow-templates/latest/flex/File_Format_Conversion"}}
+    cc_var_java_beam_jar: gs://us-central1-composer-templa-1ae2c9bc-bucket/dataflow-wordcount-jar/word-count-beam-0.1.jar
+    cc_var_java_beam_pipeline: {"output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/javadataflowout/","tempLocation":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/temp","stagingLocation":"gs://us-central1-composer-templa-1ae2c9bc-bucket/data/staging","usePublicIps": "False" }
