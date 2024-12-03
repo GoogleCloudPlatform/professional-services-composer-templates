@@ -34,73 +34,67 @@ default_args:
     start_date: '2024-01-01'
 
 # Python functions used by Python operators
-functions:
-    validate_tokens:
-        description: Validates if tokens and characters are within budget
-        code: |
-            def validate_tokens(character_budget, token_budget, total_billable_characters, total_tokens):
-                return int(total_billable_characters) < int(character_budget) and int(total_tokens) < int(token_budget)
+custom_python_functions:
+  import_functions_from_file: True
+  functions_file_path: examples/python_function_files/generative_ai_python_functions.py
 
 # Environment specific configurations
-envs:
-    default:
-        tasks:
-            - task_id: training_data_exists_sensor
-              task_type: airflow.providers.google.cloud.sensors.gcs.GCSObjectExistenceSensor
-              bucket: cloud-samples-data
-              object: ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl
-              upstream_task: None
-              trigger_rule: 'all_success'
+tasks:
+    - task_id: training_data_exists_sensor
+      task_type: airflow.providers.google.cloud.sensors.gcs.GCSObjectExistenceSensor
+      bucket: cloud-samples-data
+      object: ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl
+      depends_on: None
+      trigger_rule: 'all_success'
 
-            - task_id: sft_train_base_task
-              task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.SupervisedFineTuningTrainOperator
-              project_id: cc_var_project_id
-              location: cc_var_region
-              source_model: cc_var_pro_model
-              train_dataset: gs://cloud-samples-data/ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl
-              upstream_task: training_data_exists_sensor
-              trigger_rule: 'all_success'
+    - task_id: sft_train_base_task
+      task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.SupervisedFineTuningTrainOperator
+      project_id: cc_var_project_id
+      location: cc_var_region
+      source_model: cc_var_pro_model
+      train_dataset: gs://cloud-samples-data/ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl
+      depends_on: training_data_exists_sensor
+      trigger_rule: 'all_success'
 
-            - task_id: count_tokens_task
-              task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.CountTokensOperator
-              project_id: cc_var_project_id
-              location: cc_var_region
-              pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
-              contents: cc_var_sample_prompt
-              upstream_task: evaluate_tuned_base_model_task
-              trigger_rule: 'all_success'
+    - task_id: count_tokens_task
+      task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.CountTokensOperator
+      project_id: cc_var_project_id
+      location: cc_var_region
+      pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
+      contents: cc_var_sample_prompt
+      depends_on: evaluate_tuned_base_model_task
+      trigger_rule: 'all_success'
 
-            - task_id: validate_tokens_task
-              task_type: airflow.operators.python.PythonOperator
-              python_callable: validate_tokens
-              op_kwargs:
-                character_budget: '1000'
-                token_budget: '500'
-                total_billable_characters: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_billable_characters") }}'
-                total_tokens: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_tokens") }}'
-              provide_context: True
-              upstream_task: count_tokens_task
-              trigger_rule: 'all_success'
+    - task_id: validate_tokens_task
+      task_type: airflow.operators.python.PythonOperator
+      python_callable: validate_tokens
+      op_kwargs:
+        character_budget: '1000'
+        token_budget: '500'
+        total_billable_characters: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_billable_characters") }}'
+        total_tokens: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_tokens") }}'
+      provide_context: True
+      depends_on: count_tokens_task
+      trigger_rule: 'all_success'
 
-            - task_id: deterministic_generate_content_task
-              task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.GenerativeModelGenerateContentOperator
-              project_id: cc_var_project_id
-              location: cc_var_region
-              pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
-              system_instruction: cc_var_system_instruction
-              contents: cc_var_sample_prompt
-              generation_config: cc_var_deterministic_gen_config
-              tools: []
-              upstream_task: validate_tokens_task
-              trigger_rule: 'all_success'
+    - task_id: deterministic_generate_content_task
+      task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.GenerativeModelGenerateContentOperator
+      project_id: cc_var_project_id
+      location: cc_var_region
+      pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
+      system_instruction: cc_var_system_instruction
+      contents: cc_var_sample_prompt
+      generation_config: cc_var_deterministic_gen_config
+      tools: []
+      depends_on: validate_tokens_task
+      trigger_rule: 'all_success'
 
-    composer-templates-dev:
-        cc_var_project_id: composer-templates-dev
-        cc_var_region: us-central1
-        cc_var_pro_model: gemini-1.5-pro-002
-        cc_var_system_instruction: Always respond in plain-text only.
-        cc_var_sample_prompt: ["Summarize the following article. Article: To make a classic spaghetti carbonara, start by bringing a large pot of salted water to a boil. While the water is heating up, cook pancetta or guanciale in a skillet with olive oil over medium heat until it's crispy and golden brown. Once the pancetta is done, remove it from the skillet and set it aside. In the same skillet, whisk together eggs, grated Parmesan cheese, and black pepper to make the sauce. When the pasta is cooked al dente, drain it and immediately toss it in the skillet with the egg mixture, adding a splash of the pasta cooking water to create a creamy sauce."]
-        cc_var_deterministic_gen_config:
-            top_k: 1
-            top_p: 0.0
-            temperature: 0.1
+task_dependency:
+  default_task_dependency: True
+
+task_variables:
+  # Load variables from a YAML file in GCS. The file should be at:
+  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
+  import_from_file: True  # Boolean to enable/disable file import
+  file_name: generative_ai_tasks_variables.yaml
+  environment: dev  # Environment to load from the file
