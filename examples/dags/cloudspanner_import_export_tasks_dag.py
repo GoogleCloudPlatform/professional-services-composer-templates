@@ -138,6 +138,7 @@ def print_args(*args):
   for arg in args:
     print(arg)
 
+
 default_args = {
     "owner": 'test',
     "depends_on_past": False,
@@ -155,6 +156,7 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
+
 dag = DAG(
     dag_id='cloudspanner_import_export_tasks_dag',
     default_args=default_args,
@@ -171,14 +173,15 @@ dag = DAG(
     is_paused_upon_creation=True
 )
 
+
 with dag:
 
     start = DummyOperator(task_id='start')
 
     gcs_to_spanner = PythonOperator (
-            task_id = 'gcs_to_spanner',
-            python_callable = upload_gcs_to_spanner,
-            op_kwargs ={
+        task_id = 'gcs_to_spanner',
+        python_callable = upload_gcs_to_spanner,
+        op_kwargs = {
             'project_id': env_configs.get('cc_var_gcp_project_id'),
             'instance_id': env_configs.get('cc_var_spanner_instance_id'),
             'database_id': env_configs.get('cc_var_spanner_databse_id'),
@@ -186,43 +189,43 @@ with dag:
             'file_name': env_configs.get('cc_var_import_gcs_file_name'),
             'table_name': env_configs.get('cc_var_spanner_table'),
             'columns': env_configs.get('cc_var_spanner_table_columns'),
-            },
-            trigger_rule = 'all_done',
-        )
+        },
+        trigger_rule = 'all_done',
+    )
 
     delete_results_from_spanner = SpannerQueryDatabaseInstanceOperator (
-            task_id = 'delete_results_from_spanner',
-            instance_id = env_configs.get('cc_var_spanner_instance_id'),
-            database_id = env_configs.get('cc_var_spanner_databse_id'),
-            query = env_configs.get('cc_var_spanner_sql_query'),
-            project_id = env_configs.get('cc_var_gcp_project_id'),
-            trigger_rule = 'all_done',
-        )
+        task_id = 'delete_results_from_spanner',
+        instance_id = env_configs.get('cc_var_spanner_instance_id'),
+        database_id = env_configs.get('cc_var_spanner_databse_id'),
+        query = env_configs.get('cc_var_spanner_sql_query'),
+        project_id = env_configs.get('cc_var_gcp_project_id'),
+        trigger_rule = 'all_done',
+    )
 
     spanner_to_gcs = PythonOperator (
-            task_id = 'spanner_to_gcs',
-            python_callable = export_spanner_to_gcs,
-            op_kwargs ={
+        task_id = 'spanner_to_gcs',
+        python_callable = export_spanner_to_gcs,
+        op_kwargs = {
             'project_id': env_configs.get('cc_var_gcp_project_id'),
             'instance_id': env_configs.get('cc_var_spanner_instance_id'),
             'database_id': env_configs.get('cc_var_spanner_databse_id'),
             'bucket_name': env_configs.get('cc_var_export_gcs_bucket_name'),
             'file_name': env_configs.get('cc_var_export_gcs_file_name'),
             'sql_query': env_configs.get('cc_var_spanner_sql_export_query'),
-            },
-            trigger_rule = 'all_done',
-        )
+        },
+        trigger_rule = 'all_done',
+    )
 
     sample_python = PythonOperator (
-            task_id = 'sample_python',
-            python_callable = print_args,
-            op_args =[
+        task_id = 'sample_python',
+        python_callable = print_args,
+        op_args = [
             'Composer',
             'template',
             env_configs.get('cc_var_gcp_project_id'),
-            ],
-        )
-    
+        ],
+    )
+
     
     start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs
     
