@@ -178,7 +178,6 @@ def generate_dag_file(args):
         config_path = os.path.abspath(config_file)
         file_dir = os.path.dirname(os.path.abspath(__file__))
         template_dir = os.path.join(file_dir,"templates")
-        config_dir = os.path.join(file_dir,"configs")
         dag_id = config_data['dag_id']
         # Reading python function from .txt file or from YAML config as per configuration 
         python_functions = import_python_functions(yaml_config=config_data)
@@ -195,7 +194,10 @@ def generate_dag_file(args):
         # Uses template renderer to load and render the Jinja template
         # The template file is selected from config_data['dag_template']
         # variable from the config file that is input to the program.
-        env = Environment(loader=FileSystemLoader([template_dir, config_dir]))
+        env = Environment(
+            loader=FileSystemLoader(template_dir),
+            lstrip_blocks=True,
+        )
         template = env.get_template(dag_template+".template")
         framework_config_values = {'var_configs': var_configs}
 

@@ -119,6 +119,7 @@ if type(run_time_config_data["{{ config_values.var_configs["environment"] }}"]) 
 
 {%- set all_keys = all_keys + (default_values.keys() | list) %}
 
+
 default_args = {
 {%- for i in range(all_keys | length) %}
   {%- set key = all_keys[i] %}
@@ -127,6 +128,7 @@ default_args = {
   {%- endif %}
 {%- endfor %}
 }
+
 
 dag = DAG(
     dag_id='{{ config_data["dag_id"] }}',
@@ -144,6 +146,19 @@ dag = DAG(
     is_paused_upon_creation={{ config_data.get("is_paused_upon_creation", True) }}
 )
 
+{%- macro process_value(value, import_from_file) %}
+  {%- if value.startswith("cc_var_") %}
+    {%- if import_from_file -%}
+        env_configs.get('{{ value }}')
+    {%- else -%}
+        {{ env_configs[value]|tojson }}
+    {%- endif %}
+  {%- else -%}
+        '{{ value }}' 
+  {%- endif %}
+{%- endmacro %}
+
+
 with dag:
 
     start = DummyOperator(task_id='start')
@@ -153,56 +168,34 @@ with dag:
 
     {%- for n in range(config_data['tasks']|length) %}
 
-    {{ config_data['tasks'][n]['task_id'] }} = {{ config_data['tasks'][n]['task_type'].split('.')[-1:][0] }} (
-        {%- for key in config_data['tasks'][n].keys() %}
-        {%- if key != 'depends_on' and key != 'task_type' %}
-            {%- set value = config_data['tasks'][n][key] -%}
-        {%- if value is string %}  
-        {%- if key== "python_callable" %}
-            {{ key }} = {{ value }},
-        {%- else %}
-        {%- if value[:7] != "cc_var_" %}
-            {{ key }} = '{{ value }}',
-        {%- else %}        
-        {%- if config_values.var_configs["import_from_file"] == True %}
-            {{ key }} = env_configs.get('{{ value }}'),
-        {%- else %}
-            {{ key }} = {{ env_configs[value]|tojson }},
-        {%- endif %}
-        {%- endif %}
-        {%- endif %}
-        {%- elif value is mapping and key == "op_kwargs" %}
-        {%- set op_kwargs = {} %}
-            op_kwargs ={
-            {%- for key, value in value.items() %}
-            {%- if value[:7] != "cc_var_" %}
-            '{{ key }}' : '{{ value }}',
-            {%- elif value[:7] == "cc_var_" and config_values.var_configs["import_from_file"] == False %}
-            '{{ key }}' : {{ env_configs[value]|tojson }},
-            {%- elif config_values.var_configs["import_from_file"] == True %}
-            '{{ key }}': env_configs.get('{{ value }}'),
-            {%- endif %}
+    {{ config_data['tasks'][n]['task_id'] }} = {{ config_data['tasks'][n]['task_type'].split('.')[-1] }} (
+        {%- for key, value in config_data['tasks'][n].items() if key not in ('depends_on', 'task_type') %}
+            {%- if value is string %}
+                {%- if key == "python_callable" %}
+        {{ key }} = {{ value }},
+                {%- elif value.startswith("cc_var_") %}
+        {{ key }} = {% if config_values.var_configs["import_from_file"] %}env_configs.get('{{ value }}'){% else %}{{ env_configs[value]|tojson }}{% endif %},
+                {%- else %}
+        {{ key }} = '{{ value }}',
+                {%- endif %}
+            {%- elif key == "op_kwargs" and value is mapping %}
+        op_kwargs = {
+            {%- for k, v in value.items() %}
+            '{{ k }}': {{ process_value(v, config_values.var_configs["import_from_file"]) }},
             {%- endfor %}
-            },
-        {%- elif value is sequence and key == "op_args" %}
-        {%- set op_args =[] %}
-            op_args =[
-            {%- for item in value %}
-            {%- if item[:7] != "cc_var_" %}
-            '{{ item }}',
-            {%- elif item[:7] == "cc_var_" and config_values.var_configs["import_from_file"] == False %}
-            {{ env_configs[item]|tojson }},
-            {%- elif config_values.var_configs["import_from_file"] == True %}
-            env_configs.get('{{ item }}'),
-            {%- endif %}
+        },
+            {%- elif key == "op_args" and value is sequence %}
+        op_args = [
+            {%- for v in value %}
+            {{ process_value(v, config_values.var_configs["import_from_file"]) }},
             {%- endfor %}
-            ],
-        {%- else %}
-            {{ key }} = {{ value }},
-        {%- endif %}
-        {%- endif %}
+        ],
+            {%- else %}
+        {{ key }} = {{ value }},
+            {%- endif %}
         {%- endfor %}
-        )
+    )
+    
     {%- set _ = depen_task_dct.update({config_data['tasks'][n]['task_id']: config_data['tasks'][n]['depends_on']}) -%}
     {%- endfor %}
 
