@@ -79,20 +79,22 @@ tasks:
     prefix: cc_var_gcs_bucket_prefix
     mode: poke
     trigger_rule : 'all_done'
-    depends_on: None
+    depends_on: 
   #cc_operator_description:
   - task_id: print_file_names_from_gcs
     task_type: airflow.operators.bash.BashOperator
     bash_command: cc_var_bash_command
     trigger_rule : 'all_done'
-    depends_on: gcs_file_sensor
+    depends_on: 
+      - gcs_file_sensor
   #cc_operator_description: Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket.
   - task_id: gcs_delete_file
     task_type: airflow.providers.google.cloud.operators.gcs.GCSDeleteObjectsOperator
     bucket_name: cc_var_gcs_bucket_name
     prefix: cc_var_gcs_bucket_prefix
     trigger_rule : 'all_done'
-    depends_on: print_file_names_from_gcs
+    depends_on: 
+      - print_file_names_from_gcs
 
 
 task_dependency:

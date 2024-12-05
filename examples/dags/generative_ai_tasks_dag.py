@@ -30,8 +30,10 @@ from airflow.providers.google.cloud.operators.vertex_ai.generative_model import 
 from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.operators.vertex_ai.generative_model import GenerativeModelGenerateContentOperator
 
+
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
+
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -54,6 +56,7 @@ run_time_config_data = load_config_from_gcs(
 if type(run_time_config_data["dev"]) is dict:
     env_configs = run_time_config_data["dev"]
 
+
 # Copyright 2024 Google LLC
 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,6 +75,7 @@ if type(run_time_config_data["dev"]) is dict:
 
 def validate_tokens(character_budget, token_budget, total_billable_characters, total_tokens):
     return int(total_billable_characters) < int(character_budget) and int(total_tokens) < int(token_budget)
+
 
 default_args = {
     "owner": 'Google',
@@ -101,62 +105,64 @@ dag = DAG(
     tags=['demo', 'vertex_ai', 'generative_ai'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=None,
-    is_paused_upon_creation=True
+    max_active_tasks=None
 )
 
+
 with dag:
+        
+    training_data_exists_sensor = GCSObjectExistenceSensor(
+        task_id = "training_data_exists_sensor",
+        bucket = "cloud-samples-data",
+        object = "ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl",
+        trigger_rule = "all_success",
+    )
+        
+    sft_train_base_task = SupervisedFineTuningTrainOperator(
+        task_id = "sft_train_base_task",
+        project_id = env_configs.get('cc_var_project_id'),
+        location = env_configs.get('cc_var_region'),
+        source_model = env_configs.get('cc_var_pro_model'),
+        train_dataset = "gs://cloud-samples-data/ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl",
+        trigger_rule = "all_success",
+    )
+        
+    count_tokens_task = CountTokensOperator(
+        task_id = "count_tokens_task",
+        project_id = env_configs.get('cc_var_project_id'),
+        location = env_configs.get('cc_var_region'),
+        pretrained_model = "{{ task_instance.xcom_pull(task_ids=\"sft_train_base_task\", key=\"tuned_model_endpoint_name\") }}",
+        contents = env_configs.get('cc_var_sample_prompt'),
+        trigger_rule = "all_success",
+    )
+        
+    validate_tokens_task = PythonOperator(
+        task_id = "validate_tokens_task",
+        python_callable = validate_tokens,
+        op_kwargs = {
+            'character_budget': '1000',
+            'token_budget': '500',
+            'total_billable_characters': '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_billable_characters") }}',
+            'total_tokens': '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_tokens") }}',
+        },
+        provide_context = True,
+        trigger_rule = "all_success",
+    )
+        
+    deterministic_generate_content_task = GenerativeModelGenerateContentOperator(
+        task_id = "deterministic_generate_content_task",
+        project_id = env_configs.get('cc_var_project_id'),
+        location = env_configs.get('cc_var_region'),
+        pretrained_model = "{{ task_instance.xcom_pull(task_ids=\"sft_train_base_task\", key=\"tuned_model_endpoint_name\") }}",
+        system_instruction = env_configs.get('cc_var_system_instruction'),
+        contents = env_configs.get('cc_var_sample_prompt'),
+        generation_config = env_configs.get('cc_var_deterministic_gen_config'),
+        tools = [],
+        trigger_rule = "all_success",
+    )
 
-    start = DummyOperator(task_id='start')
 
-    training_data_exists_sensor = GCSObjectExistenceSensor (
-            task_id = 'training_data_exists_sensor',
-            bucket = 'cloud-samples-data',
-            object = 'ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl',
-            trigger_rule = 'all_success',
-        )
-
-    sft_train_base_task = SupervisedFineTuningTrainOperator (
-            task_id = 'sft_train_base_task',
-            project_id = env_configs.get('cc_var_project_id'),
-            location = env_configs.get('cc_var_region'),
-            source_model = env_configs.get('cc_var_pro_model'),
-            train_dataset = 'gs://cloud-samples-data/ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl',
-            trigger_rule = 'all_success',
-        )
-
-    count_tokens_task = CountTokensOperator (
-            task_id = 'count_tokens_task',
-            project_id = env_configs.get('cc_var_project_id'),
-            location = env_configs.get('cc_var_region'),
-            pretrained_model = '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}',
-            contents = env_configs.get('cc_var_sample_prompt'),
-            trigger_rule = 'all_success',
-        )
-
-    validate_tokens_task = PythonOperator (
-            task_id = 'validate_tokens_task',
-            python_callable = validate_tokens,
-            op_kwargs ={
-            'character_budget' : '1000',
-            'token_budget' : '500',
-            'total_billable_characters' : '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_billable_characters") }}',
-            'total_tokens' : '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_tokens") }}',
-            },
-            provide_context = True,
-            trigger_rule = 'all_success',
-        )
-
-    deterministic_generate_content_task = GenerativeModelGenerateContentOperator (
-            task_id = 'deterministic_generate_content_task',
-            project_id = env_configs.get('cc_var_project_id'),
-            location = env_configs.get('cc_var_region'),
-            pretrained_model = '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}',
-            system_instruction = env_configs.get('cc_var_system_instruction'),
-            contents = env_configs.get('cc_var_sample_prompt'),
-            generation_config = env_configs.get('cc_var_deterministic_gen_config'),
-            tools = [],
-            trigger_rule = 'all_success',
-        )
-    
-    start >> training_data_exists_sensor >> sft_train_base_task >> count_tokens_task >> validate_tokens_task >> deterministic_generate_content_task
+    training_data_exists_sensor >> sft_train_base_task
+    sft_train_base_task >> count_tokens_task
+    count_tokens_task >> validate_tokens_task
+    validate_tokens_task >> deterministic_generate_content_task

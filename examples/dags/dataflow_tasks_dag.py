@@ -29,69 +29,80 @@ from airflow.providers.google.cloud.operators.dataflow import DataflowStartFlexT
 from airflow.providers.apache.beam.operators.beam import BeamRunJavaPipelineOperator
 from airflow.providers.google.cloud.operators.dataflow import DataflowStopJobOperator
 
+
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
 
+
+
 default_args = {
-        "owner": 'test',
-        "retries": 1,
-        "email_on_failure": False,
-        "email_on_retry": False,
-        "retry_delay": timedelta(minutes=1),
-        "sla": timedelta(minutes=55),
-        "execution_timeout": timedelta(minutes=60),
+    "owner": 'test',
+    "retries": 1,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retry_delay": timedelta(minutes=1),
+    "retries": 1,
+    "retry_delay": timedelta(minutes=1),
+    "sla": timedelta(minutes=55),
+    "execution_timeout": timedelta(minutes=60)
 }
 
 dag = DAG(
-        dag_id='dataflow_tasks_dag',
-        default_args = default_args,
-        schedule_interval=None,
-        max_active_runs=1,
-        catchup=False,
-        is_paused_upon_creation=True,
-        tags=['test'],
-        start_date=airflow.utils.dates.days_ago(0)
+    dag_id='dataflow_tasks_dag',
+    default_args=default_args,
+    schedule='None',
+    description='None',
+    max_active_runs=1,
+    catchup=False,
+    is_paused_upon_creation=True,
+    dagrun_timeout=timedelta(hours=6),
+    tags=['test'],
+    start_date=datetime(2024, 12, 1),
+    end_date=datetime(2024, 12, 1),
+    max_active_tasks=None
 )
 
+
 with dag:
+        
+    start_templated_job = DataflowTemplatedJobStartOperator(
+        task_id = "start_templated_job",
+        job_name = "health-check-dataflow-job-template",
+        project_id = "composer-templates-dev",
+        template = "gs://dataflow-templates/latest/Word_Count",
+        parameters = {"inputFile": "gs://pub/shakespeare/rose.txt", "output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/dataflow_output"},
+        environment = {"ipConfiguration": "WORKER_IP_PRIVATE"},
+        location = "us-central1",
+        trigger_rule = "none_failed",
+    )
+        
+    start_flex_templated_job = DataflowStartFlexTemplateOperator(
+        task_id = "start_flex_templated_job",
+        location = "us-central1",
+        body = {"launchParameter": {"containerSpecGcsPath": "gs://dataflow-templates/latest/flex/File_Format_Conversion", "environment": {"ipConfiguration": "WORKER_IP_PRIVATE"}, "jobName": "test-flex-template", "parameters": {"inputFileFormat": "csv", "inputFileSpec": "gs://cloud-samples-data/bigquery/us-states/*.csv", "outputBucket": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/flexoutput/", "outputFileFormat": "avro", "schema": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/schema/my-schema.avsc"}}},
+        wait_until_finished = True,
+        trigger_rule = "none_failed",
+    )
+        
+    start_dataflow_job = BeamRunJavaPipelineOperator(
+        task_id = "start_dataflow_job",
+        runner = "DataflowRunner",
+        job_class = "org.apache.beam.examples.WordCount",
+        jar = "gs://us-central1-composer-templa-1ae2c9bc-bucket/dataflow-wordcount-jar/word-count-beam-0.1.jar",
+        pipeline_options = {"output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/javadataflowout/", "stagingLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/staging", "tempLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/temp", "usePublicIps": "False"},
+        dataflow_config = {'check_if_running': 'CheckJobRunning.IgnoreJob', 'location': 'us-central1', 'poll_sleep': 10, 'job_name': 'start_dataflow_job'},
+        trigger_rule = "none_failed",
+    )
+        
+    stop_templated_job = DataflowStopJobOperator(
+        task_id = "stop_templated_job",
+        location = "us-central1",
+        job_name_prefix = "health-check-dataflow-job-template",
+        trigger_rule = "none_failed",
+    )
 
-    start = DummyOperator(task_id='start')
 
-    start_templated_job = DataflowTemplatedJobStartOperator (
-            task_id = 'start_templated_job',
-            job_name = "health-check-dataflow-job-template",
-            project_id = "composer-templates-dev",
-            template = 'gs://dataflow-templates/latest/Word_Count',
-            parameters = {"inputFile": "gs://pub/shakespeare/rose.txt", "output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/dataflow_output"},
-            environment = {"ipConfiguration": "WORKER_IP_PRIVATE"},
-            location = "us-central1",
-            trigger_rule = 'none_failed',
-        )
-
-    start_flex_templated_job = DataflowStartFlexTemplateOperator (
-            task_id = 'start_flex_templated_job',
-            location = "us-central1",
-            body = {"launchParameter": {"containerSpecGcsPath": "gs://dataflow-templates/latest/flex/File_Format_Conversion", "environment": {"ipConfiguration": "WORKER_IP_PRIVATE"}, "jobName": "test-flex-template", "parameters": {"inputFileFormat": "csv", "inputFileSpec": "gs://cloud-samples-data/bigquery/us-states/*.csv", "outputBucket": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/flexoutput/", "outputFileFormat": "avro", "schema": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/schema/my-schema.avsc"}}},
-            wait_until_finished = True,
-            trigger_rule = 'none_failed',
-        )
-
-    start_dataflow_job = BeamRunJavaPipelineOperator (
-            task_id = 'start_dataflow_job',
-            runner = 'DataflowRunner',
-            job_class = 'org.apache.beam.examples.WordCount',
-            jar = "gs://us-central1-composer-templa-1ae2c9bc-bucket/dataflow-wordcount-jar/word-count-beam-0.1.jar",
-            pipeline_options = {"output": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/javadataflowout/", "stagingLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/staging", "tempLocation": "gs://us-central1-composer-templa-1ae2c9bc-bucket/data/temp", "usePublicIps": "False"},
-            dataflow_config = {'check_if_running': 'CheckJobRunning.IgnoreJob', 'location': 'us-central1', 'poll_sleep': 10, 'job_name': 'start_dataflow_job'},
-            trigger_rule = 'none_failed',
-        )
-
-    stop_templated_job = DataflowStopJobOperator (
-            task_id = 'stop_templated_job',
-            location = "us-central1",
-            job_name_prefix = "health-check-dataflow-job-template",
-            trigger_rule = 'none_failed',
-        )
-    
-    start >> start_templated_job >> [start_flex_templated_job,start_dataflow_job] >> stop_templated_job
+    start_templated_job >> start_flex_templated_job
+    start_templated_job >> start_dataflow_job
+    start_flex_templated_job >> stop_templated_job

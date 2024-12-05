@@ -1,0 +1,32 @@
+{#- Define task dependencies from YAML #}
+{%- from 'macros.template' import process_dependencies -%}
+
+{%- set all_task_ids = config_data['tasks'] | map(attribute='task_id') | list -%}
+{%- if config_data.get('task_groups') %}
+    {%- for group in config_data['task_groups'] %}
+        {%- set _ = all_task_ids.append(group['group_id']) %}
+        {%- if group.get('tasks') %}
+            {%- set _ = all_task_ids.extend(group.tasks | map(attribute='task_id') | list) %}
+        {%- endif %}
+    {%- endfor %}
+{%- endif %}
+{%- set all_task_ids = all_task_ids | unique | list -%}
+
+{%- if task_dependency['task_dependency_type'] == "custom" %}
+    {% for dependency in task_dependency['task_dependency'] %}
+    {{ dependency }}
+    {%- endfor -%}
+{%- elif task_dependency['task_dependency_type'] == "default" %}
+{%- if config_data.get('task_groups') %}
+    {%- for group in config_data['task_groups'] %}
+        {{- process_dependencies(group, all_task_ids) }}
+        {%- for task in group.get('tasks', []) %} 
+            {{- process_dependencies(task, all_task_ids) }}
+        {%- endfor %}
+    {%- endfor %}
+{%- endif %}
+
+{%- for task in config_data.get('tasks', []) %} 
+    {{- process_dependencies(task, all_task_ids) }}
+{%- endfor %}
+{%- endif %}

@@ -76,7 +76,7 @@ tasks:
     region: 'us-central1'
     repository_id: 'quickstart-production'
     compilation_result: {"git_commitish": "main"}
-    depends_on: None
+    depends_on: 
     trigger_rule : 'none_failed'
   #cc_operator_description: Creates a new WorkflowInvocation in a given Repository.
   - task_id: create_workflow_invocation
@@ -86,7 +86,8 @@ tasks:
     repository_id: 'quickstart-production'
     asynchronous: True
     workflow_invocation: {"compilation_result": "{{ task_instance.xcom_pull('create_compilation_result')['name'] }}"}
-    depends_on: create_compilation_result
+    depends_on: 
+      - create_compilation_result
     trigger_rule : 'none_failed'
 
 

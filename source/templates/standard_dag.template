@@ -25,18 +25,37 @@ from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
 from google.cloud import spanner
 
+{%- from 'macros.template' import format_value, render_task %}
 
-{%- set task_libraries = dict() %}
+{%- if config_data['task_groups'] and config_data['task_groups'] is defined %}
+from airflow.utils.task_group import TaskGroup
+{%- endif %}
 
-{%- for n in range(config_data['tasks']|length) %}
-{%- set key = '.'.join(config_data['tasks'][n]['task_type'].split('.')[0:-1]) %}
-{%- set value = '.'.join(config_data['tasks'][n]['task_type'].split('.')[-1:]) %}
-{%- set _dummy = task_libraries.__setitem__(value,key) %}
+{#- Start: Contructs imports dynamically based on task_type #}
+{%- set task_libraries = {} %} 
+
+{%- for task in config_data['tasks'] %}
+  {%- set key = ('.'.join(task['task_type'].split('.')[0:-1]), task['task_type'].split('.')[-1]) %}
+  {%- if key not in task_libraries %}
+    {%- set _ = task_libraries.update({key: None}) %} 
+  {%- endif %}
 {%- endfor %}
 
-{%- for key,value in task_libraries.items() %}
-from {{ value }} import {{ key }} 
+{%- if config_data.get('task_groups') and config_data['task_groups'] %}
+    {%- for group in config_data['task_groups'] %}
+    {%- for task in group['tasks'] %}
+        {%- set key = ('.'.join(task['task_type'].split('.')[0:-1]), task['task_type'].split('.')[-1]) %}
+        {%- if key not in task_libraries %}
+        {%- set _ = task_libraries.update({key: None}) %} 
+        {%- endif %}
+    {%- endfor %}
+    {%- endfor %}
+{%- endif %}
+
+{%- for (module, operator) in task_libraries.keys() %}
+from {{ module }} import {{ operator }}
 {%- endfor %}
+{#- End #}
 
 {%- set config_values = namespace() %}
 {%- for key, value in framework_config_values.items() %}
@@ -45,10 +64,11 @@ from {{ value }} import {{ key }}
 {%- endif %}
 {%- endfor %}
 
+
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
-{%- if config_values.var_configs["import_from_file"] == True and config_values.var_configs["file_name"] is defined %}
+{% if config_values.var_configs["import_from_file"] == True and config_values.var_configs["file_name"] is defined -%}
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -73,34 +93,29 @@ if type(run_time_config_data["{{ config_values.var_configs["environment"] }}"]) 
 
 
 {%- elif config_values.var_configs["import_from_file"] == False %}
-{% set env_configs = config_values.var_configs["variables"] %}
+{%- set env_configs = config_values.var_configs["variables"] %}
 
 {%- endif %}
 
+
+{#- Start: Processes Python functions definition from the YAML #}
 {%- if python_functions.add_functions %}
-    {%- for function_code in python_functions.functions %}
+    {% for function_code in python_functions.functions %}
 
 {{ function_code }}
 
     {%- endfor %}
 {%- endif %}
+{#- End #}
 
+
+{#- Start: Contructs default_args dynamically #}
 {%- set default_values = {
     "retries": 1,
     "retry_delay": 2,
     "sla": 55,
     "execution_timeout": 60
 } %}
-
-{%- macro format_value(key, value) %}
-  {%- if value is string %}
-    '{{ value }}'
-  {%- elif key in ['retry_delay', 'sla', 'execution_timeout'] and value is number %}
-    timedelta(minutes={{ value }})
-  {%- else %}
-    {{ value }}
-  {%- endif %}
-{%- endmacro %}
 
 {%- set default_args = {} %}
 {%- set all_keys = config_data['default_args'].keys() | list %}
@@ -128,12 +143,12 @@ default_args = {
   {%- endif %}
 {%- endfor %}
 }
-
+{#- End #}
 
 dag = DAG(
     dag_id='{{ config_data["dag_id"] }}',
     default_args=default_args,
-    schedule='{{ config_data.get("schedule_interval") or config_data.get("schedule") or "@once" }}',
+    schedule={{ (config_data.get("schedule") or config_data.get("schedule_interval")) | tojson if config_data.get("schedule") != "None" and config_data.get("schedule_interval") != "None" else None }},
     description='{{ config_data.get("description") }}',
     max_active_runs={{ config_data.get("max_active_runs") or 1 }},
     catchup={{ config_data.get("catchup", False) }},
@@ -142,87 +157,30 @@ dag = DAG(
     tags={{ config_data.get("tags", ['composer-templates']) }},
     start_date={{ config_data.get("start_date") or "datetime(2024, 12, 1)" }},
     end_date={{ config_data.get("end_date") or "datetime(2024, 12, 1)" }},
-    max_active_tasks={{ config_data.get("max_active_tasks") }},
-    is_paused_upon_creation={{ config_data.get("is_paused_upon_creation", True) }}
+    max_active_tasks={{ config_data.get("max_active_tasks") }}
 )
-
-{%- macro process_value(value, import_from_file) %}
-  {%- if value.startswith("cc_var_") %}
-    {%- if import_from_file -%}
-        env_configs.get('{{ value }}')
-    {%- else -%}
-        {{ env_configs[value]|tojson }}
-    {%- endif %}
-  {%- else -%}
-        '{{ value }}' 
-  {%- endif %}
-{%- endmacro %}
 
 
 with dag:
-
-    start = DummyOperator(task_id='start')
-
-    {%- set item = namespace(value='start') %}
-    {%- set depen_task_dct = dict() -%}
-
-    {%- for n in range(config_data['tasks']|length) %}
-
-    {{ config_data['tasks'][n]['task_id'] }} = {{ config_data['tasks'][n]['task_type'].split('.')[-1] }} (
-        {%- for key, value in config_data['tasks'][n].items() if key not in ('depends_on', 'task_type') %}
-            {%- if value is string %}
-                {%- if key == "python_callable" %}
-        {{ key }} = {{ value }},
-                {%- elif value.startswith("cc_var_") %}
-        {{ key }} = {% if config_values.var_configs["import_from_file"] %}env_configs.get('{{ value }}'){% else %}{{ env_configs[value]|tojson }}{% endif %},
-                {%- else %}
-        {{ key }} = '{{ value }}',
-                {%- endif %}
-            {%- elif key == "op_kwargs" and value is mapping %}
-        op_kwargs = {
-            {%- for k, v in value.items() %}
-            '{{ k }}': {{ process_value(v, config_values.var_configs["import_from_file"]) }},
-            {%- endfor %}
-        },
-            {%- elif key == "op_args" and value is sequence %}
-        op_args = [
-            {%- for v in value %}
-            {{ process_value(v, config_values.var_configs["import_from_file"]) }},
-            {%- endfor %}
-        ],
-            {%- else %}
-        {{ key }} = {{ value }},
-            {%- endif %}
-        {%- endfor %}
-    )
-    
-    {%- set _ = depen_task_dct.update({config_data['tasks'][n]['task_id']: config_data['tasks'][n]['depends_on']}) -%}
+    {#- Start: Processes 'tasks' from YAML  #}
+    {%- for task in config_data['tasks'] %}
+        {{ render_task(task, config_values, env_configs) }}
     {%- endfor %}
+    {#- End #}
 
-    {%- set depen_task_group_dict = dict() -%}
-    {%- for key, value in depen_task_dct.items() -%}
-        {%- set _ = depen_task_group_dict.setdefault(value, []).append(key) -%}
+    {#- Start: Processes 'task_groups' from YAML  #}
+    {% if config_data.get('task_groups') and config_data['task_groups'] %}
+    {%- for group in config_data['task_groups'] %}
+    with TaskGroup(group_id="{{ group.group_id }}") as {{ group.group_id }}:
+        {%- for group_task in group.tasks %}
+            {%- filter indent(4) %}
+            {{- render_task(group_task, config_values, env_configs) }}
+            {%- endfilter %}
+        {% endfor %}
     {%- endfor %}
-
-    {%- set final_tasks_seq = [] -%}
-    {%- for key, task in depen_task_group_dict.items() -%}
-      {%- if task | length < 2 -%}
-        {%- set new_task = task | first -%}
-        {{ final_tasks_seq.append(new_task) or "" }}
-      {%- elif task | length > 1 -%}
-        {%- set new_task = "[" ~ task | join(",") ~"]"  -%}
-        {{ final_tasks_seq.append(new_task) or "" }}
-      {%- else -%}
-        {{ "Unexpected error occurred" }}
-      {%- endif -%}
-    {%- endfor %}
-
-    {%- if task_dependency['task_dependency_type'] == "custom" %}
-    {% for dependency in task_dependency['task_dependency'] %}
-    
-    {{ dependency }}
-    {%- endfor -%}
-    {%- elif task_dependency['task_dependency_type'] == "default" %}
-    
-    {{ item.value ~ " >> " ~ final_tasks_seq|join(" >> ") }}
     {%- endif %}
+    {#- End #}
+
+    {#- Start: Processes dependencies based on 'depends_on' from YAML  #}
+    {% include 'dependencies.template' -%}
+    {# End #}

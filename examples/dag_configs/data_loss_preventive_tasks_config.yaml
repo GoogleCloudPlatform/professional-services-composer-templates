@@ -104,7 +104,7 @@ tasks:
     project_id: cc_var_gcp_project_id
     inspect_job: cc_var_dlp_job_payload
     trigger_rule : 'all_done'
-    depends_on: None
+    depends_on: 
 
 
 task_dependency:
