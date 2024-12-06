@@ -144,6 +144,40 @@ tasks:
       - delete_results_from_spanner
 ```
 
+- **task_groups**: Contains the definitions of Airflow TaskGroups within the DAG. 
+
+```yaml
+task_groups:
+  - group_id: my_task_group1
+    depends_on: 
+    tasks:
+      - task_id: bash_example1
+        task_type: airflow.operators.bash.BashOperator
+        bash_command: |
+          echo "bash_example1"
+          date
+          ls -l
+      - task_id: bash_example2
+        task_type: airflow.operators.bash.BashOperator
+        bash_command: |
+          echo "bash_example2"
+          pwd
+  - group_id: extract_data
+    depends_on: 
+      - my_task_group1
+    tasks:
+      - task_id: extract_from_source_a
+        task_type: airflow.providers.postgres.operators.postgres.PostgresOperator
+        sql: SELECT * FROM source_a;
+        depends_on:
+          - bash_example1
+      - task_id: extract_from_source_b
+        task_type: airflow.providers.postgres.operators.postgres.PostgresOperator
+        sql: SELECT * FROM source_b;
+        depends_on:
+          - bash_example2
+```
+
 - **task_dependency**: Controls the default task dependency behavior. All tasks with dependencies are validated against the YAML-defined tasks, regardless of the scenario
   - **Default**: Dependency will be dynamically built based on `depends_on` in your task definitions
 
@@ -197,7 +231,7 @@ tasks:
 
 ## DAG Generation
 ### Step 1: Create a configuration file as shown below
-Refer [YAML examples](examples/dag_configs/)
+- Refer [YAML - DAG Configuration examples](examples/dag_configs/)
 
 ### Step 2: Run the template to generate the DAG .py file
 
