@@ -25,7 +25,7 @@ from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
 from google.cloud import spanner
 
-{%- from 'macros.template' import format_value, render_task %}
+{%- from 'macros.template' import format_value, render_task_group, render_task %}
 
 {%- if config_data['task_groups'] and config_data['task_groups'] is defined %}
 from airflow.utils.task_group import TaskGroup
@@ -170,7 +170,7 @@ with dag:
 
     {#- Start: Processes 'task_groups' from YAML  #}
     {% if config_data.get('task_groups') and config_data['task_groups'] %}
-    {%- for group in config_data['task_groups'] %}
+    {#- {%- for group in config_data['task_groups'] %}
     with TaskGroup(group_id="{{ group.group_id }}") as {{ group.group_id }}:
         {%- for group_task in group.tasks %}
             {%- filter indent(4) %}
@@ -178,6 +178,11 @@ with dag:
             {%- endfilter %}
         {% endfor %}
     {%- endfor %}
+    {%- endif %} #}
+
+    {% for group in config_data['task_groups'] %}
+        {{ render_task_group(group, config_values, env_configs) }}
+    {% endfor %}
     {%- endif %}
     {#- End #}
 

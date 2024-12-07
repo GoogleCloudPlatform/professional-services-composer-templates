@@ -20,6 +20,22 @@
   {%- endif %}
 {%- endmacro %}
 
+{%- macro render_task_group(group, config_values, env_configs) %}
+    with TaskGroup(group_id="{{ group.group_id }}") as {{ group.group_id }}:
+        {%- for task in group.tasks %}
+            {%- filter indent(4) %}
+            {{ render_task(task, config_values, env_configs) }}
+            {%- endfilter %}
+        {%- endfor %}
+        {%- if 'task_groups' in group %}
+            {%- for nested_group in group.task_groups %}
+                {%- filter indent(4) %}
+                {{ render_task_group(nested_group, config_values, env_configs) }}
+                {%- endfilter %}
+            {%- endfor %}
+        {%- endif %}
+{%- endmacro %}
+
 {% macro render_task(task, config_values, env_configs) %}
     {{ task['task_id'] }} = {{ task['task_type'].split('.')[-1] }}(
         {%- for key, value in task.items() if key not in ('depends_on', 'task_type') %}
@@ -49,6 +65,34 @@
         {%- endfor %}
     )
 {%- endmacro %}
+
+{%- macro extract_task_ids(group, temp_taskgroup_task_ids=None) -%}
+    {%- if temp_taskgroup_task_ids is none %}
+        {%- set temp_taskgroup_task_ids = [] %} 
+    {%- endif %}
+    {%- set _ = temp_taskgroup_task_ids.append(group['group_id']) %}
+    {%- if group.get('tasks') %}
+        {%- set _ = temp_taskgroup_task_ids.extend(group.tasks | map(attribute='task_id') | list) %}
+    {%- endif %}
+    {%- if group.get('task_groups') %}
+        {%- for nested_group in group.task_groups %}
+            {%- set _ = extract_task_ids(nested_group, temp_taskgroup_task_ids) %}
+        {%- endfor %}
+    {%- endif %}
+    {{ temp_taskgroup_task_ids | join(',') | replace('\n', '') }}
+{%- endmacro %}
+
+{%- macro process_dependencies_recursive(group, all_task_ids) -%}
+    {{ process_dependencies(group, all_task_ids) }}
+    {%- if group.get('task_groups') %}
+        {%- for nested_group in group['task_groups'] -%}
+            {{ process_dependencies_recursive(nested_group, all_task_ids) }}
+        {%- endfor %}
+    {%- endif %}
+    {%- for task in group.get('tasks', []) -%}
+        {{ process_dependencies(task, all_task_ids) }}
+    {%- endfor %}
+{%- endmacro -%}
 
 {%- macro process_dependencies(item, all_task_ids) -%}
     {%- if item.depends_on %} 
