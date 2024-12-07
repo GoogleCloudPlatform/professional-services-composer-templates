@@ -24,13 +24,25 @@ from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
 from google.cloud import spanner
+from airflow.utils.task_group import TaskGroup
 from airflow.providers.google.cloud.operators.datafusion import CloudDataFusionStartPipelineOperator
+from airflow.operators.dummy import DummyOperator
 
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
 
+
+
+def pull_xcom(**kwargs):
+  """
+  Pulls a value from XCom and prints it.
+  """
+  ti = kwargs['ti']
+  pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
+  print(f"Pulled value from XCom: {pulled_value}")
+  return pulled_value
 
 
 default_args = {
@@ -46,9 +58,9 @@ default_args = {
 }
 
 dag = DAG(
-    dag_id='datafusion_tasks_dag',
+    dag_id='nested_task_groups_dag',
     default_args=default_args,
-    schedule='None',
+    schedule=None,
     description='None',
     max_active_runs=1,
     catchup=False,
@@ -72,3 +84,57 @@ with dag:
         trigger_rule = "none_failed",
     )
 
+
+
+        
+    with TaskGroup(group_id="Simple_Task_Group") as Simple_Task_Group:
+                
+        T1 = DummyOperator(
+            task_id = "T1",
+        )
+                
+        T2 = DummyOperator(
+            task_id = "T2",
+        )
+                
+        T21 = DummyOperator(
+            task_id = "T21",
+        )
+                
+        T22 = DummyOperator(
+            task_id = "T22",
+        )
+                
+        T3 = DummyOperator(
+            task_id = "T3",
+        )
+                    
+        with TaskGroup(group_id="Nested_Task_Group") as Nested_Task_Group:
+                    
+            T4 = DummyOperator(
+                task_id = "T4",
+            )
+                    
+            T5 = DummyOperator(
+                task_id = "T5",
+            )
+                    
+            T51 = DummyOperator(
+                task_id = "T51",
+            )
+                    
+            T52 = DummyOperator(
+                task_id = "T52",
+            )
+                    
+            T6 = DummyOperator(
+                task_id = "T6",
+            )
+
+
+            
+    Simple_Task_Group >> Nested_Task_Group
+    T5 >> T51
+    T5 >> T52
+    T2 >> T21
+    T2 >> T22

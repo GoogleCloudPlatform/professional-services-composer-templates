@@ -76,7 +76,7 @@ tasks:
     task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyDatasetOperator
     dataset_id: 'test_dataset'
     project_id: cc_var_project_id
-    depends_on: None
+    depends_on: 
     trigger_rule : 'none_failed'
   #cc_operator_description: Creates a new table in the specified BigQuery dataset, optionally with schema.
   - task_id: create_bq_table
@@ -84,14 +84,16 @@ tasks:
     dataset_id: 'test_dataset'
     table_id: 'test_table'
     schema_fields: [{"name": "emp_name", "type": "STRING", "mode": "REQUIRED"},{"name": "salary", "type": "INTEGER", "mode": "NULLABLE"}]
-    depends_on: create_bq_dataset
+    depends_on: 
+      - create_bq_dataset
     trigger_rule : 'none_failed'
   #cc_operator_description: Fetch data and return it, either from a BigQuery table, or results of a query job.
   - task_id: get_data_from_bq_table
     task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryGetDataOperator
     dataset_id: 'test_dataset'
     table_id: 'test_table'
-    depends_on: create_bq_dataset
+    depends_on: 
+      - create_bq_dataset
     trigger_rule : 'none_failed'
   #cc_operator_description: Transfers a BigQuery table to a Google Cloud Storage bucket.
   - task_id: export_to_gcs
@@ -101,7 +103,8 @@ tasks:
     export_format: csv
     field_delimiter: ','
     print_header: True
-    depends_on: get_data_from_bq_table
+    depends_on: 
+      - get_data_from_bq_table
     trigger_rule : 'none_failed'
   #cc_operator_description: Executes BigQuery SQL queries in a specific BigQuery database.
   - task_id: bq_query_execute
@@ -111,7 +114,8 @@ tasks:
     allow_large_results: True
     destination_dataset_table: cc_var_destination_dataset_table
     sql: cc_var_sql
-    depends_on: export_to_gcs
+    depends_on: 
+      - export_to_gcs
     trigger_rule : 'none_failed'
 
 

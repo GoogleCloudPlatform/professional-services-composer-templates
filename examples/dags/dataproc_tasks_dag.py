@@ -31,96 +31,110 @@ from airflow.providers.google.cloud.operators.dataproc import DataprocDeleteClus
 from airflow.providers.google.cloud.operators.dataproc import DataprocCreateWorkflowTemplateOperator
 from airflow.providers.google.cloud.operators.dataproc import DataprocInstantiateWorkflowTemplateOperator
 
+
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
 
+
+
 default_args = {
-        "owner": 'test',
-        "retries": 1,
-        "email_on_failure": False,
-        "email_on_retry": False,
-        "retry_delay": timedelta(minutes=1),
-        "sla": timedelta(minutes=55),
-        "execution_timeout": timedelta(minutes=60),
+    "owner": 'test',
+    "retries": 1,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retry_delay": timedelta(minutes=1),
+    "retries": 1,
+    "retry_delay": timedelta(minutes=1),
+    "sla": timedelta(minutes=55),
+    "execution_timeout": timedelta(minutes=60)
 }
 
 dag = DAG(
-        dag_id='dataproc_tasks_dag',
-        default_args = default_args,
-        schedule_interval=None,
-        max_active_runs=1,
-        catchup=False,
-        is_paused_upon_creation=True,
-        tags=['test'],
-        start_date=airflow.utils.dates.days_ago(0)
+    dag_id='dataproc_tasks_dag',
+    default_args=default_args,
+    schedule=None,
+    description='None',
+    max_active_runs=1,
+    catchup=False,
+    is_paused_upon_creation=True,
+    dagrun_timeout=timedelta(hours=6),
+    tags=['test'],
+    start_date=datetime(2024, 12, 1),
+    end_date=datetime(2024, 12, 1),
+    max_active_tasks=None
 )
 
+
 with dag:
+        
+    create_cluster = DataprocCreateClusterOperator(
+        task_id = "create_cluster",
+        cluster_name = "test-cluster",
+        region = "us-central1",
+        project_id = "composer-templates-dev",
+        cluster_config = {"gce_cluster_config": {"internal_ip_only": 1}, "master_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 1}, "worker_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 2}},
+        trigger_rule = "none_failed",
+    )
+        
+    update_cluster = DataprocUpdateClusterOperator(
+        task_id = "update_cluster",
+        cluster_name = "test-cluster",
+        project_id = "composer-templates-dev",
+        region = "us-central1",
+        graceful_decommission_timeout = {'seconds': 600},
+        cluster = {"config": {"secondary_worker_config": {"num_instances": 3}, "worker_config": {"num_instances": 3}}},
+        update_mask = {'paths': ['config.worker_config.num_instances', 'config.secondary_worker_config.num_instances']},
+        deferrable = True,
+        trigger_rule = "none_failed",
+    )
+        
+    hadoop_job = DataprocSubmitJobOperator(
+        task_id = "hadoop_job",
+        region = "us-central1",
+        project_id = "composer-templates-dev",
+        job = {"hadoop_job": {"args": ["wordcount", "gs://pub/shakespeare/rose.txt", "us-central1-composer-dag-fa-2d7e71fc-bucket/data/"], "main_jar_file_uri": "file:///usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar"}, "placement": {"cluster_name": "test-cluster"}, "reference": {"project_id": "composer-templates-dev"}},
+        deferrable = True,
+        trigger_rule = "none_failed",
+    )
+        
+    spark_job = DataprocSubmitJobOperator(
+        task_id = "spark_job",
+        region = "us-central1",
+        project_id = "composer-templates-dev",
+        job = {"placement": {"cluster_name": "test-cluster"}, "reference": {"project_id": "composer-templates-dev"}, "spark_job": {"jar_file_uris": ["file:///usr/lib/spark/examples/jars/spark-examples.jar"], "main_class": "org.apache.spark.examples.SparkPi"}},
+        deferrable = True,
+        trigger_rule = "none_failed",
+    )
+        
+    delete_cluster = DataprocDeleteClusterOperator(
+        task_id = "delete_cluster",
+        cluster_name = "test-cluster",
+        region = "us-central1",
+        project_id = "composer-templates-dev",
+        trigger_rule = "none_failed",
+    )
+        
+    create_template = DataprocCreateWorkflowTemplateOperator(
+        task_id = "create_template",
+        template = {"id": "sparkpi", "jobs": [{"spark_job": {"jar_file_uris": ["file:///usr/lib/spark/examples/jars/spark-examples.jar"], "main_class": "org.apache.spark.examples.SparkPi"}, "step_id": "compute"}], "placement": {"managed_cluster": {"cluster_name": "test-cluster", "config": {"gce_cluster_config": {"internal_ip_only": 1}, "master_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 1}, "worker_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 2}}}}},
+        project_id = "composer-templates-dev",
+        region = "us-central1",
+        trigger_rule = "all_done",
+    )
+        
+    start_template_job = DataprocInstantiateWorkflowTemplateOperator(
+        task_id = "start_template_job",
+        template_id = "sparkpi",
+        project_id = "composer-templates-dev",
+        region = "us-central1",
+        trigger_rule = "none_failed",
+    )
 
-    start = DummyOperator(task_id='start')
 
-    create_cluster = DataprocCreateClusterOperator (
-            task_id = 'create_cluster',
-            cluster_name = "test-cluster",
-            region = "us-central1",
-            project_id = "composer-templates-dev",
-            cluster_config = {"gce_cluster_config": {"internal_ip_only": 1}, "master_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 1}, "worker_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 2}},
-            trigger_rule = 'none_failed',
-        )
-
-    update_cluster = DataprocUpdateClusterOperator (
-            task_id = 'update_cluster',
-            cluster_name = "test-cluster",
-            project_id = "composer-templates-dev",
-            region = "us-central1",
-            graceful_decommission_timeout = {'seconds': 600},
-            cluster = {"config": {"secondary_worker_config": {"num_instances": 3}, "worker_config": {"num_instances": 3}}},
-            update_mask = {'paths': ['config.worker_config.num_instances', 'config.secondary_worker_config.num_instances']},
-            deferrable = True,
-            trigger_rule = 'none_failed',
-        )
-
-    hadoop_job = DataprocSubmitJobOperator (
-            task_id = 'hadoop_job',
-            region = "us-central1",
-            project_id = "composer-templates-dev",
-            job = {"hadoop_job": {"args": ["wordcount", "gs://pub/shakespeare/rose.txt", "us-central1-composer-dag-fa-2d7e71fc-bucket/data/"], "main_jar_file_uri": "file:///usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar"}, "placement": {"cluster_name": "test-cluster"}, "reference": {"project_id": "composer-templates-dev"}},
-            deferrable = True,
-            trigger_rule = 'none_failed',
-        )
-
-    spark_job = DataprocSubmitJobOperator (
-            task_id = 'spark_job',
-            region = "us-central1",
-            project_id = "composer-templates-dev",
-            job = {"placement": {"cluster_name": "test-cluster"}, "reference": {"project_id": "composer-templates-dev"}, "spark_job": {"jar_file_uris": ["file:///usr/lib/spark/examples/jars/spark-examples.jar"], "main_class": "org.apache.spark.examples.SparkPi"}},
-            deferrable = True,
-            trigger_rule = 'none_failed',
-        )
-
-    delete_cluster = DataprocDeleteClusterOperator (
-            task_id = 'delete_cluster',
-            cluster_name = "test-cluster",
-            region = "us-central1",
-            project_id = "composer-templates-dev",
-            trigger_rule = 'none_failed',
-        )
-
-    create_template = DataprocCreateWorkflowTemplateOperator (
-            task_id = 'create_template',
-            template = {"id": "sparkpi", "jobs": [{"spark_job": {"jar_file_uris": ["file:///usr/lib/spark/examples/jars/spark-examples.jar"], "main_class": "org.apache.spark.examples.SparkPi"}, "step_id": "compute"}], "placement": {"managed_cluster": {"cluster_name": "test-cluster", "config": {"gce_cluster_config": {"internal_ip_only": 1}, "master_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 1}, "worker_config": {"disk_config": {"boot_disk_size_gb": 1024, "boot_disk_type": "pd-standard"}, "machine_type_uri": "n1-standard-4", "num_instances": 2}}}}},
-            project_id = "composer-templates-dev",
-            region = "us-central1",
-            trigger_rule = 'all_done',
-        )
-
-    start_template_job = DataprocInstantiateWorkflowTemplateOperator (
-            task_id = 'start_template_job',
-            template_id = 'sparkpi',
-            project_id = "composer-templates-dev",
-            region = "us-central1",
-            trigger_rule = 'none_failed',
-        )
-    
-    start >> create_cluster >> update_cluster >> [hadoop_job,spark_job] >> delete_cluster >> create_template >> start_template_job
+    create_cluster >> update_cluster
+    update_cluster >> hadoop_job
+    update_cluster >> spark_job
+    spark_job >> delete_cluster
+    delete_cluster >> create_template
+    create_template >> start_template_job

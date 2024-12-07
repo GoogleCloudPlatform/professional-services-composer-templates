@@ -28,54 +28,64 @@ from airflow.providers.google.cloud.sensors.gcs import GCSObjectsWithPrefixExist
 from airflow.operators.bash import BashOperator
 from airflow.providers.google.cloud.operators.gcs import GCSDeleteObjectsOperator
 
+
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
 
+
+
 default_args = {
-        "owner": 'test',
-        "retries": 1,
-        "email_on_failure": False,
-        "email_on_retry": False,
-        "retry_delay": timedelta(minutes=1),
-        "sla": timedelta(minutes=55),
-        "execution_timeout": timedelta(minutes=60),
+    "owner": 'test',
+    "retries": 1,
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "retry_delay": timedelta(minutes=1),
+    "retries": 1,
+    "retry_delay": timedelta(minutes=1),
+    "sla": timedelta(minutes=55),
+    "execution_timeout": timedelta(minutes=60)
 }
 
 dag = DAG(
-        dag_id='gcs_sensor_tasks_dag',
-        default_args = default_args,
-        schedule_interval=None,
-        max_active_runs=1,
-        catchup=False,
-        is_paused_upon_creation=True,
-        tags=['test'],
-        start_date=airflow.utils.dates.days_ago(0)
+    dag_id='gcs_sensor_tasks_dag',
+    default_args=default_args,
+    schedule='None',
+    description='None',
+    max_active_runs=1,
+    catchup=False,
+    is_paused_upon_creation=True,
+    dagrun_timeout=timedelta(hours=6),
+    tags=['test'],
+    start_date=datetime(2024, 12, 1),
+    end_date=datetime(2024, 12, 1),
+    max_active_tasks=None
 )
 
+
 with dag:
+        
+    gcs_file_sensor = GCSObjectsWithPrefixExistenceSensor(
+        task_id = "gcs_file_sensor",
+        bucket = "sample-bq-test-2",
+        prefix = "gcs-sensor/",
+        mode = "poke",
+        trigger_rule = "all_done",
+    )
+        
+    print_file_names_from_gcs = BashOperator(
+        task_id = "print_file_names_from_gcs",
+        bash_command = "echo {{ ti.xcom_pull(task_ids=\"gcs_file_sensor\") }}",
+        trigger_rule = "all_done",
+    )
+        
+    gcs_delete_file = GCSDeleteObjectsOperator(
+        task_id = "gcs_delete_file",
+        bucket_name = "sample-bq-test-2",
+        prefix = "gcs-sensor/",
+        trigger_rule = "all_done",
+    )
 
-    start = DummyOperator(task_id='start')
 
-    gcs_file_sensor = GCSObjectsWithPrefixExistenceSensor (
-            task_id = 'gcs_file_sensor',
-            bucket = "sample-bq-test-2",
-            prefix = "gcs-sensor/",
-            mode = 'poke',
-            trigger_rule = 'all_done',
-        )
-
-    print_file_names_from_gcs = BashOperator (
-            task_id = 'print_file_names_from_gcs',
-            bash_command = "echo {{ ti.xcom_pull(task_ids=\"gcs_file_sensor\") }}",
-            trigger_rule = 'all_done',
-        )
-
-    gcs_delete_file = GCSDeleteObjectsOperator (
-            task_id = 'gcs_delete_file',
-            bucket_name = "sample-bq-test-2",
-            prefix = "gcs-sensor/",
-            trigger_rule = 'all_done',
-        )
-    
-    start >> gcs_file_sensor >> print_file_names_from_gcs >> gcs_delete_file
+    gcs_file_sensor >> print_file_names_from_gcs
+    print_file_names_from_gcs >> gcs_delete_file

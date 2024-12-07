@@ -24,11 +24,16 @@ from typing import Dict
 from airflow.operators.dummy_operator import DummyOperator
 from google.cloud import storage
 from google.cloud import spanner
+from airflow.utils.task_group import TaskGroup
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.spanner import SpannerQueryDatabaseInstanceOperator
+from airflow.operators.bash import BashOperator
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
+
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -50,6 +55,7 @@ run_time_config_data = load_config_from_gcs(
 
 if type(run_time_config_data["dev"]) is dict:
     env_configs = run_time_config_data["dev"]
+
 
 def upload_gcs_to_spanner(
   project_id:str, instance_id:str, database_id:str, bucket_name:str, file_name:str, table_name:str,columns:list):
@@ -156,11 +162,10 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
-
 dag = DAG(
     dag_id='cloudspanner_import_export_tasks_dag',
     default_args=default_args,
-    schedule='@once',
+    schedule=null,
     description='Sample example to import/export data in and out of cloud spanner.',
     max_active_runs=1,
     catchup=False,
@@ -169,17 +174,14 @@ dag = DAG(
     tags=['spanner', 'test', 'v1.1'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=5,
-    is_paused_upon_creation=True
+    max_active_tasks=5
 )
 
 
 with dag:
-
-    start = DummyOperator(task_id='start')
-
-    gcs_to_spanner = PythonOperator (
-        task_id = 'gcs_to_spanner',
+        
+    gcs_to_spanner = PythonOperator(
+        task_id = "gcs_to_spanner",
         python_callable = upload_gcs_to_spanner,
         op_kwargs = {
             'project_id': env_configs.get('cc_var_gcp_project_id'),
@@ -190,20 +192,20 @@ with dag:
             'table_name': env_configs.get('cc_var_spanner_table'),
             'columns': env_configs.get('cc_var_spanner_table_columns'),
         },
-        trigger_rule = 'all_done',
+        trigger_rule = "all_done",
     )
-
-    delete_results_from_spanner = SpannerQueryDatabaseInstanceOperator (
-        task_id = 'delete_results_from_spanner',
+        
+    delete_results_from_spanner = SpannerQueryDatabaseInstanceOperator(
+        task_id = "delete_results_from_spanner",
         instance_id = env_configs.get('cc_var_spanner_instance_id'),
         database_id = env_configs.get('cc_var_spanner_databse_id'),
         query = env_configs.get('cc_var_spanner_sql_query'),
         project_id = env_configs.get('cc_var_gcp_project_id'),
-        trigger_rule = 'all_done',
+        trigger_rule = "all_done",
     )
-
-    spanner_to_gcs = PythonOperator (
-        task_id = 'spanner_to_gcs',
+        
+    spanner_to_gcs = PythonOperator(
+        task_id = "spanner_to_gcs",
         python_callable = export_spanner_to_gcs,
         op_kwargs = {
             'project_id': env_configs.get('cc_var_gcp_project_id'),
@@ -213,11 +215,11 @@ with dag:
             'file_name': env_configs.get('cc_var_export_gcs_file_name'),
             'sql_query': env_configs.get('cc_var_spanner_sql_export_query'),
         },
-        trigger_rule = 'all_done',
+        trigger_rule = "all_done",
     )
-
-    sample_python = PythonOperator (
-        task_id = 'sample_python',
+        
+    sample_python = PythonOperator(
+        task_id = "sample_python",
         python_callable = print_args,
         op_args = [
             'Composer',
@@ -226,11 +228,33 @@ with dag:
         ],
     )
 
-    
-    start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs
-    
-    [start >> gcs_to_spanner] >> spanner_to_gcs
-    
-    start >> [delete_results_from_spanner, spanner_to_gcs]
-    
-    spanner_to_gcs >> sample_python
+    with TaskGroup(group_id="my_task_group1") as my_task_group1:
+        bash_example1 = BashOperator(
+            task_id = "bash_example1",
+            bash_command = "echo \"bash_example1\"\ndate\nls -l\n",
+        )
+
+        bash_example2 = BashOperator(
+            task_id = "bash_example2",
+            bash_command = "echo \"bash_example2\"\npwd\n",
+        )
+
+    with TaskGroup(group_id="extract_data") as extract_data:
+        extract_from_source_a = PostgresOperator(
+            task_id = "extract_from_source_a",
+            sql = "SELECT * FROM source_a;",
+        )
+
+        extract_from_source_b = PostgresOperator(
+            task_id = "extract_from_source_b",
+            sql = "SELECT * FROM source_b;",
+        )
+
+
+    my_task_group1 >> extract_data
+    bash_example1 >> extract_from_source_a
+    bash_example2 >> extract_from_source_b
+    extract_data >> gcs_to_spanner
+    gcs_to_spanner >> delete_results_from_spanner
+    delete_results_from_spanner >> spanner_to_gcs
+    delete_results_from_spanner >> sample_python

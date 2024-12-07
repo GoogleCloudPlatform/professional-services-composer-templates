@@ -18,7 +18,7 @@ dag_id: dataproc_tasks_dag
 description:
 max_active_runs:
 catchup: False
-schedule_interval: "None"
+schedule_interval: None
 tags: ["test"]
 owner:
 
@@ -79,7 +79,7 @@ tasks:
     region: cc_var_region
     project_id: cc_var_project_id
     cluster_config: cc_var_create_cluster
-    depends_on: None
+    depends_on: 
     trigger_rule : 'none_failed'
   #cc_operator_description: Update a cluster in a project.
   - task_id: update_cluster
@@ -91,7 +91,8 @@ tasks:
     cluster: cc_var_update_cluster
     update_mask: {"paths":["config.worker_config.num_instances","config.secondary_worker_config.num_instances"]}
     deferrable: True
-    depends_on: create_cluster
+    depends_on: 
+      - create_cluster
     trigger_rule : 'none_failed'
   #cc_operator_description: Submit a job to a cluster.
   - task_id: hadoop_job
@@ -100,7 +101,8 @@ tasks:
     project_id: cc_var_project_id
     job: cc_var_hadoop_job
     deferrable: True
-    depends_on: update_cluster
+    depends_on: 
+      - update_cluster
     trigger_rule : 'none_failed'
   #cc_operator_description: Submit a job to a cluster.
   - task_id: spark_job
@@ -109,7 +111,8 @@ tasks:
     project_id: cc_var_project_id
     job: cc_var_spark_job
     deferrable: True
-    depends_on: update_cluster
+    depends_on: 
+      - update_cluster
     trigger_rule : 'none_failed'
   #cc_operator_description: Delete a cluster in a project.
   - task_id: delete_cluster
@@ -117,7 +120,8 @@ tasks:
     cluster_name: cc_var_cluster_name
     region: cc_var_region
     project_id: cc_var_project_id
-    depends_on: spark_job
+    depends_on: 
+      - spark_job
     trigger_rule : 'none_failed'
   #cc_operator_description: Creates new workflow template.
   - task_id: create_template
@@ -127,7 +131,8 @@ tasks:
     project_id: cc_var_project_id
     # The region for the template
     region: cc_var_region
-    depends_on: delete_cluster
+    depends_on: 
+      - delete_cluster
     trigger_rule : 'all_done'
   #cc_operator_description: Instantiate a WorkflowTemplate on Google Cloud Dataproc.
   - task_id: start_template_job
@@ -138,7 +143,8 @@ tasks:
     # The region for the template
     region: cc_var_region
     #deferrable: True
-    depends_on: create_template
+    depends_on: 
+      - create_template
     trigger_rule : 'none_failed'
 
 

@@ -82,7 +82,7 @@ tasks:
     parameters: cc_var_parameters
     environment: cc_var_environment
     location: cc_var_region
-    depends_on: None
+    depends_on: 
     trigger_rule : 'none_failed'
   #cc_operator_description: Starts flex templates with the Dataflow pipeline.
   - task_id: start_flex_templated_job
@@ -90,7 +90,8 @@ tasks:
     location: cc_var_region
     body: cc_var_flex_body
     wait_until_finished: True
-    depends_on: start_templated_job
+    depends_on: 
+      - start_templated_job
     trigger_rule : 'none_failed'
   #cc_operator_description: Starts dataflow Java job
   - task_id: start_dataflow_job
@@ -100,14 +101,16 @@ tasks:
     jar: cc_var_java_beam_jar
     pipeline_options: cc_var_java_beam_pipeline
     dataflow_config : {"check_if_running":"CheckJobRunning.IgnoreJob","location":"us-central1","poll_sleep":10,'job_name':'start_dataflow_job'}
-    depends_on: start_templated_job
+    depends_on: 
+      - start_templated_job
     trigger_rule : 'none_failed'
   #cc_operator_description: Stops the job with the specified name prefix or Job ID.
   - task_id: stop_templated_job
     task_type: airflow.providers.google.cloud.operators.dataflow.DataflowStopJobOperator
     location: cc_var_region
     job_name_prefix: cc_var_job_name
-    depends_on: start_flex_templated_job
+    depends_on: 
+      - start_flex_templated_job
     trigger_rule : 'none_failed'
 
 

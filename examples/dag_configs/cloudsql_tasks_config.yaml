@@ -87,35 +87,39 @@ tasks:
     gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
     sql: cc_var_truncate_sales_table_sql
     trigger_rule : 'all_done'
-    depends_on: None
+    depends_on: 
   #cc_operator_description: Import data into a Cloud SQL instance from Cloud Storage.
   - task_id: cloud_sql_import_sales_data_from_gcs
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLImportInstanceOperator
     instance: cc_var_composer_instance
     body: cc_var_import_from_gcs_cloud_sql_body
     trigger_rule : 'all_done'
-    depends_on: cloud_sql_truncate_sales_table_task
+    depends_on: 
+      - cloud_sql_truncate_sales_table_task
   #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
   - task_id: cloud_sql_drop_sales_reporting_table_task
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExecuteQueryOperator
     gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
     sql: cc_var_drop_sales_reporting_table_sql
     trigger_rule : 'all_done'
-    depends_on: cloud_sql_import_sales_data_from_gcs
+    depends_on: 
+      - cloud_sql_import_sales_data_from_gcs
   #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
   - task_id: cloud_sql_create_sales_reporting_table_task
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExecuteQueryOperator
     gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
     sql: cc_var_create_sales_table_sql
     trigger_rule : 'all_done'
-    depends_on: cloud_sql_drop_sales_reporting_table_task
+    depends_on: 
+      - cloud_sql_drop_sales_reporting_table_task
   #cc_operator_description: Export data from a Cloud SQL instance to a Cloud Storage bucket.
   - task_id: export_sales_reporting_table_to_gcs
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExportInstanceOperator
     instance: cc_var_composer_instance
     body: cc_var_export_to_gcs_cloud_sql_body
     trigger_rule : 'all_done'
-    depends_on: cloud_sql_create_sales_reporting_table_task
+    depends_on: 
+      - cloud_sql_create_sales_reporting_table_task
 
 
 task_dependency:
