@@ -80,7 +80,7 @@ tasks:
     instance_name: test1
     location: us-west1
     project_id: composer-templates-dev
-    depends_on: None
+    depends_on: 
     trigger_rule : 'none_failed'
 
 

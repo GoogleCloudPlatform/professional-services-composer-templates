@@ -56,84 +56,76 @@ Here's a list of the operators that have been pretested:
 
 
 ## YAML Sections
-1. **DAG parameters**: Defines general DAG-level settings like dag_id, description, schedule_interval, etc.
-2. **default_args**: Specifies default arguments to be applied to all tasks in the DAG, such as owner, retries, and email notifications.
-3. **custom_python_functions**: Allows you to define custom Python functions to be used within the DAG. 
-4. **tasks**: Contains the definitions of individual tasks within the DAG. Each task is defined with properties like task_id, task_type, and task-specific configurations.
-5. **task_dependency**: Controls the default task dependency behavior.
-6. **task_variables**: Manages the loading and defining of variables used within the DAG. You can either import variables from a YAML file in GCS or define them directly within this section.
-
-
-## DAG Generation
-### Step 1: Create a configuration file as shown below
+- **DAG parameters**: Defines general DAG-level settings like dag_id, description, schedule_interval, etc.
 
 ```yaml
----
-# DAG parameters
-dag_id: bigquery_tasks_dag    # [Mandatory] 
+dag_id: cloudspanner_import_export_tasks_dag     
+description: "Sample example to import/export data in and out of cloud spanner."
+max_active_runs:
 catchup: False
-schedule_interval: '@hourly'  # [Mandatory] Enclose values within quotes       
-tags: ["test"]
+schedule: 
+tags: ["spanner","test","v1.1"]
+start_date:
+end_date:
+max_active_tasks: 5
+dagrun_timeout: timedelta(hours=3)
+is_paused_upon_creation: True
+```
 
+- **default_args**: Specifies default arguments to be applied to all tasks in the DAG, such as owner, retries, and email notifications.
 
-default_args: # [Mandatory]
-    owner: 'test'
-    email_on_failure: False
-    email_on_retry: False
-    retry_delay: 30  # seconds               
+```yaml
+default_args:
+  owner: 'test'
+  depends_on_past: False
+  retries: 3
+  email_on_failure: False
+  email_on_retry: False
+  email: ["test@example.com"]                       
+  retry_delay: 1  # minutes   
+  mode: "reschedule"
+  poke_interval: 120
+  sla: 60    
+```
 
+- **custom_python_functions**: Allows you to define custom Python functions to be used within the DAG. 
+  - **Import from file**:  Python functions can be imported directly from file by setting `import_functions_from_file: True`
 
-# Define Python functions to be added in your Airflow DAG
-# - import_functions_from_file:  
-#   - True:  Load functions from a local Python file (specify the 'file_path').
-#   - False: Define functions directly within this YAML configuration.
-# - functions: In-place code.
-custom_python_functions:
-  # Option 1 - Import your custom python functions from a file
-  # NOTE: Users need to ensure the validty of Python function mentioned in the file
-  import_functions_from_file: False
-  functions_file_path: <YOUR LOCAL DIRECTORY>/cloudspanneroperator_python_functions.txt
+    ```yaml
+    custom_python_functions:
+      import_functions_from_file: True
+      functions_file_path: examples/python_function_files/cloudspanneroperator_python_functions.py
+    ```
 
-  # Option 2 - Define it directly in the configuration file here
-  custom_defined_functions:
-    upload_gcs_to_spanner:
-    description: Sample function as an example to perform custom transformation.
-    code: |
-      def transformation(data):
-        """
-        Sample function as an example to perform custom transformation.
+  - **Define in YAML**: Or, python functions can be directly defined in the YAML by setting `import_functions_from_file: False`
 
-        Args:
-          data: Sample data on which we can perform any transformation.
-        
-        Returns:
-          The data converted into a string format.
-        """
-        print("Printing sample payload from transformation function: {}".format(data))
-        output = str(data)
-        return output
-  pull_xcom:
-    description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-    code: |
-      def pull_xcom(**kwargs):
-        """
-        Pulls a value from XCom and prints it.
-        """
-        ti = kwargs['ti']
-        pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-        print(f"Pulled value from XCom: {pulled_value}")
-        return pulled_value
+    ```yaml
+    custom_python_functions:
+    import_functions_from_file: False
+    custom_defined_functions:
+      upload_gcs_to_spanner:
+        description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
+        code: |
+          def print_args(*args):
+            """Prints all arguments passed to the function.
 
+            Args:
+              *args: Any number of arguments.
+            """
+            for arg in args:
+              print(arg)
+    ```
+- **tasks**: Contains the definitions of individual tasks within the DAG. Each task is defined with properties like task_id, task_type, and task-specific configurations.
 
-# Tasks specific configs
-# mandatory
+```yaml
 tasks:
   - task_id: gcs_to_spanner
     task_type: airflow.operators.python_operator.PythonOperator
     python_callable: upload_gcs_to_spanner
     op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
     trigger_rule : 'all_done'
-    depends_on: None
+    depends_on: 
+      - extract_data
   - task_id: delete_results_from_spanner
     task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
     instance_id: cc_var_spanner_instance_id
@@ -141,40 +133,105 @@ tasks:
     query: cc_var_spanner_sql_query 
     project_id: cc_var_gcp_project_id
     trigger_rule : 'all_done'
-    depends_on: gcs_to_spanner
-
-
-task_dependency:
-  # Controls task dependency management.
-  # - default_task_dependency: Controls default dependency behavior.
-  #   - If True, tasks will depend on each other based on the `depends_on` configuration within each task definition.
-  #   - If False, use `custom_task_dependency` to define dependencies.
-  # - custom_task_dependency:  Explicitly define dependencies
-  
-  # Examples (Each entry `-` defines a separate dependency chain in the generated Airflow DAG. Must be enclosed with double-quotes):
-  #   - "task_a >> task_b >> task_c"  
-  #   - "[task_a, task_b] >> task_c" 
-  #   - "task_a >> task_b | task_c >> task_d" 
-  default_task_dependency: False
-  custom_task_dependency: 
-    - "start >> gcs_to_spanner >> delete_results_from_spanner >> spanner_to_gcs"
-    - "[start >> gcs_to_spanner] >> spanner_to_gcs"
-    - "start >> [delete_results_from_spanner, spanner_to_gcs]"
-
-
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: True  # Boolean to enable/disable file import
-  file_name: cloudspanner_tasks_variables.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    cc_var_gcp_project_id: composer-templates-dev
-    cc_var_spanner_instance_id: composer-templates-spannerdb
-    cc_var_spanner_databse_id: dev-spannerdb
+    depends_on: 
+      - gcs_to_spanner
+  - task_id: spanner_to_gcs
+    task_type: airflow.operators.python_operator.PythonOperator
+    python_callable: export_spanner_to_gcs
+    op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_export_gcs_bucket_name,"file_name":cc_var_export_gcs_file_name,"sql_query":cc_var_spanner_sql_export_query}
+    trigger_rule : 'all_done'
+    depends_on: 
+      - delete_results_from_spanner
 ```
+
+- **task_groups**: Contains the definitions of Airflow TaskGroups within the DAG. 
+
+```yaml
+task_groups:
+  - group_id: my_task_group1
+    depends_on: 
+    tasks:
+      - task_id: bash_example1
+        task_type: airflow.operators.bash.BashOperator
+        bash_command: |
+          echo "bash_example1"
+          date
+          ls -l
+      - task_id: bash_example2
+        task_type: airflow.operators.bash.BashOperator
+        bash_command: |
+          echo "bash_example2"
+          pwd
+  - group_id: extract_data
+    depends_on: 
+      - my_task_group1
+    tasks:
+      - task_id: extract_from_source_a
+        task_type: airflow.providers.postgres.operators.postgres.PostgresOperator
+        sql: SELECT * FROM source_a;
+        depends_on:
+          - bash_example1
+      - task_id: extract_from_source_b
+        task_type: airflow.providers.postgres.operators.postgres.PostgresOperator
+        sql: SELECT * FROM source_b;
+        depends_on:
+          - bash_example2
+```
+
+- **task_dependency**: Controls the default task dependency behavior. All tasks with dependencies are validated against the YAML-defined tasks, regardless of the scenario
+  - **Default**: Dependency will be dynamically built based on `depends_on` in your task definitions
+
+    ```yaml
+    task_dependency:
+      default_task_dependency: True
+    ```
+
+  - **Custom**: User provided dependency.
+
+    ```yaml
+    task_dependency:
+      default_task_dependency: True
+      custom_task_dependency: 
+        - "my_task_group1 >> extract_data"
+        - "bash_example1 >> extract_from_source_a"
+        - "bash_example2 >> extract_from_source_b"
+        - "extract_data >> gcs_to_spanner >> delete_results_from_spanner >> [spanner_to_gcs, sample_python]"
+    ```
+
+- **task_variables**: Manages the loading and defining of variables used within the DAG. You can either import variables from a YAML file in GCS or define them directly within this section.
+  - **Import from file**: Loads the variable dynamically during runtime from a file in GCS by setting `import_from_file: True`
+
+    ```yaml
+    task_variables:
+      import_from_file: True  # Boolean to enable/disable file import
+      file_name: cloudspanner_tasks_variables.yaml
+      environment: dev
+    ```
+  
+  - **Define in YAML**: Directly defined in YAML by setting `import_from_file: False`. Variables must have the mandatory prefix `cc_var_`
+
+    ```yaml
+    task_variables:
+      import_from_file: False  # Boolean to enable/disable file import
+      variables:
+        cc_var_gcp_project_id: composer-templates-dev
+        cc_var_spanner_instance_id: composer-templates-spannerdb
+        cc_var_spanner_databse_id: dev-spannerdb
+        cc_var_spanner_table: Products
+        cc_var_spanner_table_columns: ["ProductId","ProductName","Description","Price","LastModified"]
+        cc_var_spanner_sql_query: "DELETE FROM Products WHERE LastModified < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 DAY);"
+        cc_var_import_gcs_bucket_name: composer-templates-dev-input-files
+        cc_var_import_gcs_file_name: spanner_input/sample_data_spanner.csv
+        cc_var_export_gcs_bucket_name: hmh_backup
+        cc_var_export_gcs_file_name: spanner_output/product_data_output.csv
+        cc_var_spanner_sql_export_query: "SELECT * FROM Products ;"
+    ```
+
+
+
+## DAG Generation
+### Step 1: Create a configuration file as shown below
+- Refer [YAML - DAG Configuration examples](examples/dag_configs/)
 
 ### Step 2: Run the template to generate the DAG .py file
 

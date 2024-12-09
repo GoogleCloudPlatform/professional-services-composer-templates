@@ -23,6 +23,9 @@ from datetime import timedelta
 
 config_file = ''
 
+def raise_exception(message):
+    raise ValueError(message)
+
 def import_python_functions(yaml_config: dict) -> dict:
     """
     Generate a dictionary for importing Python functions into a DAG.
@@ -75,6 +78,33 @@ def import_python_functions(yaml_config: dict) -> dict:
         return {"add_functions": False}
 
 
+def get_unique_tasks(config_data):
+    """
+    Extracts unique task IDs from a dictionary containing task and task group definitions.
+
+    Args:
+      config_data: A dictionary containing task and task group definitions.
+
+    Returns:
+      A list of unique task IDs, including task group IDs.
+    """
+    all_task_ids = []
+    
+    # Extract task IDs from regular tasks
+    for task in config_data.get('tasks', []):
+        all_task_ids.append(task['task_id'])
+
+    # Extract task IDs from task groups and their tasks
+    for group in config_data.get('task_groups', []):
+        all_task_ids.append(group['group_id'])  # Add the group_id as a task
+        if 'tasks' in group:
+            for task in group['tasks']:
+                all_task_ids.append(task['task_id'])
+
+    # Return unique task IDs
+    return sorted(list(set(all_task_ids)))
+
+
 def validate_create_task_dependency(yaml_config: dict) -> dict:
     """Validate and create task dependency for the DAG.
 
@@ -90,48 +120,34 @@ def validate_create_task_dependency(yaml_config: dict) -> dict:
     """
     try:
         default_dependency = yaml_config['task_dependency']['default_task_dependency']
-        if default_dependency not in (True, False):
-            raise ValueError("Invalid default_task_dependency value. "
-                             "Acceptable values are True or False")
-    except KeyError:
-        raise ValueError("Missing 'task_dependency' or 'default_task_dependency' in yaml_config")
+        if not isinstance(default_dependency, bool):  # More concise type check
+            raise ValueError("Invalid default_task_dependency value. Acceptable values are True or False")
+    except KeyError as e:
+        raise ValueError(f"Missing key in yaml_config: {e}") from e  # More informative error message
 
-    task_list = ["start"]
-    for task in yaml_config['tasks']:
-        task_list.append(task['task_id'])
-    task_list.sort()
+    task_list = get_unique_tasks(yaml_config)
 
     if default_dependency:
         return {"task_dependency_type": "default"}
 
-    # Custom dependency
     try:
         custom_dependency = yaml_config['task_dependency']['custom_task_dependency']
-    except KeyError:
-        raise ValueError("Missing 'custom_task_dependency' in yaml_config")
-    
+    except KeyError as e:
+        raise ValueError(f"Missing key in yaml_config: {e}") from e
+
     print("Task Validation: validating tasks for custom dependency")
-    
+
     task_dependency = []
     custom_tasks = set()
     for dependency_chain in custom_dependency:
-        # Remove the quotes from the dependency chain
-        dependency_chain = dependency_chain.strip('"')  
-        task_dependency.append(dependency_chain)  
+        dependency_chain = dependency_chain.strip('"')
+        task_dependency.append(dependency_chain)
+        custom_tasks.update(re.findall(r'[\w_]+', dependency_chain))
 
-        # Extract tasks 
-        task_names = re.findall(r'[\w_]+', dependency_chain)  
-        custom_tasks.update(task_names)
-
-
-    # task_dependency = "\n".join(task_dependency)
-    distinct_custom_tasks = sorted(list(custom_tasks))
-
-    if distinct_custom_tasks != task_list:
+    if sorted(custom_tasks) != task_list:
         print(f"List of config tasks: {task_list}")
-        print(f"List of custom tasks: {distinct_custom_tasks}")
-        raise ValueError("Validation error: Tasks in custom_task_dependency "
-                         "don't match config tasks")
+        print(f"List of custom tasks: {sorted(custom_tasks)}")  # Sort for consistent comparison
+        raise ValueError("Validation error: Tasks in custom_task_dependency don't match config tasks")
 
     print("Task Validation: task validation successful")
     return {"task_dependency_type": "custom", "task_dependency": task_dependency}
@@ -198,6 +214,7 @@ def generate_dag_file(args):
             loader=FileSystemLoader(template_dir),
             lstrip_blocks=True,
         )
+        env.globals['raise_exception'] = raise_exception
         template = env.get_template(dag_template+".template")
         framework_config_values = {'var_configs': var_configs}
 
