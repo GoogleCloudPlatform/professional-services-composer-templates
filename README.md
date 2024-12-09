@@ -247,3 +247,30 @@ Below code samples will produce a Python file for the DAG, using the same name a
 ```sh
 python3 source/generate_dag.py --config_file examples/dag_configs/cloudspanner_import_export_config.yaml
 ```
+
+### Step 3: Deploy generated DAG to your composer environment
+
+To deploy the DAG, please provide the following command-line arguments tailored to your Google Cloud Composer enviornment.
+
+Below parameters are supplied for deployment
+
+| Parameter | Description |
+| :---     | :--- |
+| gcp_project_id | Google Cloud Platform Project ID |
+| gcp_composer_env_id | Google Cloud Composer Environment Name  
+| composer_env_location | Google Cloud Composer Environment location
+| dag_file | Full file path of the python DAG file to be uploaded E.g '/Users/abc/main/dags/cloudsql_tasks_dag.py'  
+| tasks_variables_flag | Tasks Variable flag which states that the DAG read variables from use_case_tasks_variables.yaml file allowed values are True or False  
+| tasks_variables_file | Full file path of the YAML task variables file to be uploaded E.g '/examples/composer_dag_tasks_variables/cloudspanner_tasks_variables.yaml'
+
+The command serves as an example, please update the parameters values as per your Google Cloud Platform configurations. 
+
+```sh
+ python3 /source/deploy_dag.py \
+ -gcp_project_id='composer-templates' \
+ -gcp_composer_env_name='composer-templates' \
+ -composer_env_location='us-central1' \
+ -dag_file='/examples/dags/cloudspanner_import_export_tasks_dag.py' \
+ -tasks_variables_flag=False \
+ -tasks_variables_file='/examples/composer_dag_tasks_variables/cloudspanner_tasks_variables.yaml'
+ ```
