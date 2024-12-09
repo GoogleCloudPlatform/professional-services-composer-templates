@@ -101,19 +101,19 @@ default_args:
 
     ```yaml
     custom_python_functions:
-    import_functions_from_file: False
-    custom_defined_functions:
-      upload_gcs_to_spanner:
-        description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
-        code: |
-          def print_args(*args):
-            """Prints all arguments passed to the function.
+      import_functions_from_file: False
+      custom_defined_functions:
+        upload_gcs_to_spanner:
+          description: Uploads data from a CSV file in GCS to a Cloud Spanner table.
+          code: |
+            def print_args(*args):
+              """Prints all arguments passed to the function.
 
-            Args:
-              *args: Any number of arguments.
-            """
-            for arg in args:
-              print(arg)
+              Args:
+                *args: Any number of arguments.
+              """
+              for arg in args:
+                print(arg)
     ```
 - **tasks**: Contains the definitions of individual tasks within the DAG. Each task is defined with properties like task_id, task_type, and task-specific configurations.
 
@@ -144,7 +144,7 @@ tasks:
       - delete_results_from_spanner
 ```
 
-- **task_groups**: Contains the definitions of Airflow TaskGroups within the DAG. 
+- **task_groups**: Contains the definitions of Airflow TaskGroups within the DAG. Refer  [Nested TaskGroup example](examples/dag_configs/nested_task_groups.yaml)
 
 ```yaml
 task_groups:
