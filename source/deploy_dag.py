@@ -28,14 +28,13 @@ from google.cloud import storage
 class validate_deploy_dag:
 
     def __init__(self,config):
-        print(config)
         self.config = config
         self.project_id = config['gcp_project_id']
         self.location = config['composer_env_location']
         self.gcp_composer_env_name = config['gcp_composer_env_name']
-        self.dynamic_dag_flag = config['dynamic_dag_flag']
         self.dag_file = config['dag_file']
-        self.dynamic_dag_config_file = config['dynamic_dag_config_file']
+        self.tasks_variables_flag = config['tasks_variables_flag']
+        self.tasks_variables_file = config['tasks_variables_file']
     
     def google_api_headers(self):
         """ This function gets access tokens and authorizations\
@@ -61,18 +60,18 @@ class validate_deploy_dag:
         return reqSession
 
     def validate_file_path(self):
-        """This function validates the file path for given dag and config_dag """
+        """This function validates the file path for given dag and tasks_variables """
         """
         :param self
         :return str dag_filename: DAG filename
         :return str dag_directory_path: DAG local file path
         :return str dag_file_validation: DAG File validation flag Success or Fail
-        :return str config_dag_filename: Dynamic Config DAG filename
-        :return str config_dag_directory_path: Config DAG local file path
-        :return str config_dag_validation: Config DAG File validation flag Success or Fail
+        :return str tasks_variables_filename: Task Variables filename
+        :return str tasks_variables_directory_path: Tasks Variables directory file path
+        :return str tasks_variables_file_validation: Tasks Variables directory file validation flag Success or Fail
         """
         try:
-            logging.info("Reading dag_file and config_dag_file path to validate file path")
+            logging.info("Reading dag_file and tasks_variables_file to validate file path")
             dag_directory = str(self.dag_file).split("/")
             dag_directory_path = '/'.join(dag_directory[:-1])
             dag_filename = dag_directory[-1]
@@ -86,35 +85,37 @@ class validate_deploy_dag:
                 logging.error(" Please check DAG filename or file path as file:{}\
                             not found at the given path {}".format(dag_filename,dag_directory_path))
 
-            if self.dynamic_dag_flag == "True":
-                config_dag_directory = str(self.dynamic_dag_config_file).split("/")
-                config_dag_directory_path = '/'.join(config_dag_directory[:-1])
-                config_dag_filename = config_dag_directory[-1]
-                config_dag_files = [ file for file in  os.listdir(config_dag_directory_path)]
-                if config_dag_filename in config_dag_files:
-                    config_dag_validation = "success"
-                    logging.info("Config DAG file path successfully validated")
+            if self.tasks_variables_flag == "True":
+                tasks_variables_directory = str(self.tasks_variables_file).split("/")
+                tasks_variables_directory_path = '/'.join(tasks_variables_directory[:-1])
+                tasks_variables_filename = tasks_variables_directory[-1]
+                tasks_variables_files = [ file for file in  os.listdir(tasks_variables_directory_path)]
+                if tasks_variables_filename in tasks_variables_files:
+                    tasks_variables_file_validation = "success"
+                    logging.info("Tasks Variables file path successfully validated")
                 else:
-                    config_dag_validation = "fail"
-                    logging.warning(" Please check Dyamic DAG config filename or file path as file:{}\
-                            not found at the given path {}".format(config_dag_filename,config_dag_directory))
-            elif self.dynamic_dag_flag == "False":
-                config_dag_validation = "pass"
-                config_dag_filename = ""
-                config_dag_directory_path = ""
-                logging.warning(" Skipping to validate dynamic dag config file\
-                    validation as dynamic_dag_flag value is False ")
+                    tasks_variables_file_validation = "fail"
+                    logging.error(" Check tasks variables filename or file path as file:{}\
+                            not found at the given path {}".format(tasks_variables_filename,tasks_variables_directory))
+                    raise Exception(" Check tasks variables filename or file path as file:{}\
+                            not found at the given path {}".format(tasks_variables_filename,tasks_variables_directory))
+                    
+            elif self.tasks_variables_flag == "False":
+                tasks_variables_file_validation = "pass"
+                tasks_variables_filename = ""
+                tasks_variables_directory_path = ""
+                logging.warning("Skipping to validate tasks variables file path as tasks_variables_flag value is False ")
             else:
-                config_dag_validation = "fail"
-                logging.warning(" Skipping to validate dynamic dag config file\
-                    validation as expected dynamic_dag_flag value should be True or False")
+                tasks_variables_file_validation = "fail"
+                raise Exception("Check tasks variables filename or file path as file:{}\
+                            not found at the given path {}".format(tasks_variables_filename,tasks_variables_directory))
                 
         except Exception as error:
             logging.error(" File validation failed due to following errors : {}".format(str(type(error).__name__)+" --> "+ str(error)))
-            return dag_file_validation,config_dag_validation
+            return dag_file_validation,tasks_variables_file_validation
         else:
             return dag_filename,dag_directory_path,dag_file_validation,\
-                config_dag_filename,config_dag_directory_path,config_dag_validation
+                tasks_variables_filename,tasks_variables_directory_path,tasks_variables_file_validation
                 
     def upload_to_gcs(self,gcs_file_name,source_file_path):
         """This function get Composer DAG GCS folder path and \
@@ -125,7 +126,7 @@ class validate_deploy_dag:
         :return str config_dag_validation: Config DAG File validation flag Success or Fail
         """
         try:
-            logging.info("Getting Composer Google Cloud Storage DAGS bucket ")
+            logging.info("Getting Google Cloud Composer Google Cloud Storage DAGS bucket ")
             authHeaders = self.google_api_headers()
             reqSession = self.createRequestSession()
             environment_url = (
@@ -148,17 +149,17 @@ class validate_deploy_dag:
     def deploy_dag(self):
         """This function gets the GCS path for composer dags, \
             validates the file path for dag and uploads it to GCS Composer DAGS folder """
-        
+
         dag_filename,dag_directory_path,dag_file_validation,\
-                config_dag_filename,config_dag_directory_path,config_dag_validation = self.validate_file_path()
-        
-        if dag_file_validation == "success" and config_dag_validation == "success":
+                tasks_variables_filename,tasks_variables_directory_path,tasks_variables_file_validation = self.validate_file_path()
+    
+        if dag_file_validation == "success" and tasks_variables_file_validation == "success":
             self.upload_to_gcs(dag_filename,dag_directory_path)
-            self.upload_to_gcs(config_dag_filename,config_dag_directory_path)
-        elif dag_file_validation == "success" and config_dag_validation == "pass":
+            self.upload_to_gcs(tasks_variables_filename,tasks_variables_directory_path)
+        elif dag_file_validation == "success" and tasks_variables_file_validation == "pass":
             self.upload_to_gcs(dag_filename,dag_directory_path)
         else:
-            logging.error(" Please check file validation as dag_file_validation or config_dag_validation failed ")
+            logging.error("Check file validation as dag_file_validation or tasks_variables_file_validation failed ")
 
 
 if __name__ == '__main__':
@@ -168,8 +169,8 @@ if __name__ == '__main__':
     parser.add_argument("-gcp_composer_env_name",required=True,type=str, help=""" Cloud composer environment name """)
     parser.add_argument("-composer_env_location",required=True,type=str, help=""" Cloud Composer environment location """)
     parser.add_argument("-dag_file",required=True,type=str, help=""" DAG file to upload to GCS """)
-    parser.add_argument("-dynamic_dag_flag",required=True,type=str, help=""" Dynamic DAG file, If Tue then please mention value for dynamic_dag_config_file """)
-    parser.add_argument("-dynamic_dag_config_file",required=False,type=str, help=""" Dynamic DAG config file to upload to GCS """)
+    parser.add_argument("-tasks_variables_flag",required=True,type=str, help=""" Tasks Variable flag. Acceptable values True or False """)
+    parser.add_argument("-tasks_variables_file",required=False,type=str, help=""" Tasks Variables file to upload to GCS """)
     args = parser.parse_args()
     argsDict = vars(args)
     dags = validate_deploy_dag(argsDict)
