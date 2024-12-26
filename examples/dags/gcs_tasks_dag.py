@@ -13,17 +13,9 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 from airflow.providers.google.cloud.operators.gcs import GCSCreateBucketOperator
 from airflow.providers.google.cloud.operators.gcs import GCSSynchronizeBucketsOperator
 from airflow.providers.google.cloud.operators.gcs import GCSListObjectsOperator
@@ -35,7 +27,13 @@ log.setLevel(logging.INFO)
 
 
 
+# Define variables
+project_id = "composer-templates-dev"
+bucket_name = "test-bucket12345654321"
+public_bucket = "pub"
 
+
+# Define Airflow DAG default_args
 default_args = {
     "owner": 'test',
     "retries": 1,
@@ -48,10 +46,11 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
+
 dag = DAG(
     dag_id='gcs_tasks_dag',
     default_args=default_args,
-    schedule='None',
+    schedule=None,
     description='None',
     max_active_runs=1,
     catchup=False,
@@ -60,43 +59,41 @@ dag = DAG(
     tags=['test'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=None
+    
 )
 
 
 with dag:
         
     create_bucket = GCSCreateBucketOperator(
-        task_id = "create_bucket",
-        project_id = "composer-templates-dev",
-        bucket_name = "test-bucket12345654321",
+        bucket_name = bucket_name,
+        project_id = project_id,
         storage_class = "MULTI_REGIONAL",
-        labels = {'env': 'dev', 'team': 'airflow'},
+        task_id = "create_bucket",
         trigger_rule = "none_failed",
     )
         
     synchronize_bucket = GCSSynchronizeBucketsOperator(
-        task_id = "synchronize_bucket",
-        source_bucket = "pub",
-        source_object = "shakespeare/rose.txt",
-        destination_bucket = "test-bucket12345654321",
+        destination_bucket = bucket_name,
         destination_object = "shakespeare/rose.txt",
+        source_bucket = public_bucket,
+        source_object = "shakespeare/rose.txt",
+        task_id = "synchronize_bucket",
         trigger_rule = "none_failed",
     )
         
     list_objects = GCSListObjectsOperator(
-        task_id = "list_objects",
-        bucket = "test-bucket12345654321",
+        bucket = bucket_name,
         prefix = "shakespeare/",
+        task_id = "list_objects",
         trigger_rule = "none_failed",
     )
         
     delete_bucket = GCSDeleteBucketOperator(
+        bucket_name = bucket_name,
         task_id = "delete_bucket",
-        bucket_name = "test-bucket12345654321",
         trigger_rule = "all_done",
     )
-
 
     create_bucket >> synchronize_bucket
     synchronize_bucket >> list_objects

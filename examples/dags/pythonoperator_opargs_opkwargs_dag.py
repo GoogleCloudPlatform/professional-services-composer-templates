@@ -16,44 +16,34 @@
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from airflow.providers.google.cloud.operators.datafusion import CloudDataFusionStartPipelineOperator
+from airflow.utils.task_group import TaskGroup
+from datetime import datetime
+from airflow.operators.python import PythonOperator
 
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
 
+def greet(name):
+  print(f"Hello, {name}!")
+
 
 # Define variables
-
-
-# Define Airflow DAG default_args
-default_args = {
-    "owner": 'test',
-    "retries": 1,
-    "email_on_failure": False,
-    "email_on_retry": False,
-    "retry_delay": timedelta(minutes=1),
-    "retries": 1,
-    "retry_delay": timedelta(minutes=1),
-    "sla": timedelta(minutes=55),
-    "execution_timeout": timedelta(minutes=60)
-}
-
-
+alpha = 'alpha'
+beta = 'beta'
 
 
 dag = DAG(
-    dag_id='datafusion_tasks_dag',
-    default_args=default_args,
+    dag_id='pythonoperator_opargs_opkwargs_dag',
     schedule=None,
-    description='None',
+    description='test dag',
     max_active_runs=1,
     catchup=False,
     is_paused_upon_creation=True,
     dagrun_timeout=timedelta(hours=6),
-    tags=['test'],
-    start_date=datetime(2024, 12, 1),
+    tags=['composer-templates'],
+    start_date=datetime(2024, 12, 20),
     end_date=datetime(2024, 12, 1),
     
 )
@@ -61,11 +51,23 @@ dag = DAG(
 
 with dag:
         
-    create_datafusion_pipeline = CloudDataFusionStartPipelineOperator(
-        instance_name = "test1",
-        location = "us-west1",
-        pipeline_name = "test",
-        project_id = "composer-templates-dev",
-        task_id = "create_datafusion_pipeline",
-        trigger_rule = "none_failed",
+    greet_task = PythonOperator(
+        op_kwargs = {
+          'name': f'{alpha}',
+          'test': 'val'
+        },
+        python_callable = greet,
+        task_id = "greet_task",
     )
+        
+    with TaskGroup(group_id="greet_group") as greet_group:
+                
+        names = ['Alpha', 'Beta']
+        for name in names:
+            f'greet_{name}' = PythonOperator(
+                op_args = [name],
+                python_callable = greet,
+                task_id = f'greet_{name}',
+            )
+
+            

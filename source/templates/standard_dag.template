@@ -13,19 +13,11 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 
-{%- from 'macros.template' import format_value, render_task_group, render_task %}
+{%- from 'macros.template' import render_optional_param, format_value, render_task_group, render_task %}
 
 {%- if config_data['task_groups'] and config_data['task_groups'] is defined %}
 from airflow.utils.task_group import TaskGroup
@@ -52,6 +44,13 @@ from airflow.utils.task_group import TaskGroup
     {%- endfor %}
 {%- endif %}
 
+{#- Start: Additional imports #}
+{%- if config_data.get('additional_imports') and config_data['additional_imports'] %}
+    {%- for imp in config_data.get('additional_imports', []) %}
+{{ imp.module }}
+    {%- endfor %}
+{%- endif %}
+
 {%- for (module, operator) in task_libraries.keys() %}
 from {{ module }} import {{ operator }}
 {%- endfor %}
@@ -68,7 +67,26 @@ from {{ module }} import {{ operator }}
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
-{% if config_values.var_configs["import_from_file"] == True and config_values.var_configs["file_name"] is defined -%}
+{#- Start: Processes Python functions definition from the YAML #}
+{%- if python_functions.add_functions %}
+    {% for function_code in python_functions.functions %}
+
+{{ function_code }}
+
+    {%- endfor %}
+{%- endif %}
+{# End #}
+
+{#- Start: Processes python variables definition #}
+{% if dag_variables.add_variables %}
+    {% for variable in dag_variables.variables -%}
+
+{{ variable }}
+    {%- endfor %}
+{%- endif %}
+{#- End #}
+
+{%- if config_values.var_configs["import_from_file"] == True and config_values.var_configs["file_name"] is defined -%}
 composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
 composer_env_bucket = os.environ["GCS_BUCKET"]
 env_configs = {}
@@ -98,91 +116,40 @@ if type(run_time_config_data["{{ config_values.var_configs["environment"] }}"]) 
 {%- endif %}
 
 
-{#- Start: Processes Python functions definition from the YAML #}
-{%- if python_functions.add_functions %}
-    {% for function_code in python_functions.functions %}
-
-{{ function_code }}
-
-    {%- endfor %}
-{%- endif %}
-{#- End #}
-
-
-{#- Start: Contructs default_args dynamically #}
-{%- set default_values = {
-    "retries": 1,
-    "retry_delay": 2,
-    "sla": 55,
-    "execution_timeout": 60
-} %}
-
-{%- set default_args = {} %}
-{%- set all_keys = config_data['default_args'].keys() | list %}
-
-{%- for key, value in config_data['default_args'].items() %}
-  {%- if value is not none %}
-    {%- set _ = default_args.update({key: value}) %}
-  {%- endif %}
-{%- endfor %}
-
-{%- for key, value in default_values.items() %}
-  {%- if key not in default_args and value is not none %}
-    {%- set _ = default_args.update({key: value}) %}
-  {%- endif %}
-{%- endfor %}
-
-{%- set all_keys = all_keys + (default_values.keys() | list) %}
-
-
-default_args = {
-{%- for i in range(all_keys | length) %}
-  {%- set key = all_keys[i] %}
-  {%- if default_args.get(key) is not none %}
-    "{{ key }}": {{ format_value(key, default_args[key]) | trim }}{% if i < (all_keys | length - 1) %},{% endif %}
-  {%- endif %}
-{%- endfor %}
-}
-{#- End #}
-
 dag = DAG(
     dag_id='{{ config_data["dag_id"] }}',
+    {%- if dag_variables.valid_default_args %}
     default_args=default_args,
+    {%- endif %}
     schedule={{ (config_data.get("schedule") or config_data.get("schedule_interval")) | tojson if config_data.get("schedule") != "None" and config_data.get("schedule_interval") != "None" else None }},
     description='{{ config_data.get("description") }}',
-    max_active_runs={{ config_data.get("max_active_runs") or 1 }},
-    catchup={{ config_data.get("catchup", False) }},
-    is_paused_upon_creation={{ config_data.get("is_paused_upon_creation", True) }},
-    dagrun_timeout={{ config_data.get("dagrun_timeout") or "timedelta(hours=6)" }},
-    tags={{ config_data.get("tags", ['composer-templates']) }},
-    start_date={{ config_data.get("start_date") or "datetime(2024, 12, 1)" }},
-    end_date={{ config_data.get("end_date") or "datetime(2024, 12, 1)" }},
-    max_active_tasks={{ config_data.get("max_active_tasks") }}
+    {{ render_optional_param(config_data, 'max_active_runs', 1) }}
+    {{ render_optional_param(config_data, 'catchup', False) }}
+    {{ render_optional_param(config_data, 'is_paused_upon_creation', True) }}
+    {{ render_optional_param(config_data, 'dagrun_timeout', "timedelta(hours=6)") }}
+    {{ render_optional_param(config_data, 'tags', ['composer-templates']) }}
+    {{ render_optional_param(config_data, 'start_date', "datetime(2024, 12, 1)") }}
+    {{ render_optional_param(config_data, 'end_date', "datetime(2024, 12, 1)") }}
+    {{- render_optional_param(config_data, 'max_active_tasks') }}
+    {{- render_optional_param(config_data, 'on_failure_callback') }}
+    {{ render_optional_param(config_data, 'on_success_callback') }}
 )
 
 
 with dag:
     {#- Start: Processes 'tasks' from YAML  #}
+    {%- if config_data.get('tasks') and config_data['tasks'] %}
     {%- for task in config_data['tasks'] %}
-        {{ render_task(task, config_values, env_configs) }}
+        {{ render_task(task, dag_variables) }}
     {%- endfor %}
+    {%- endif %}
     {#- End #}
 
     {#- Start: Processes 'task_groups' from YAML  #}
-    {% if config_data.get('task_groups') and config_data['task_groups'] %}
-    {#- {%- for group in config_data['task_groups'] %}
-    with TaskGroup(group_id="{{ group.group_id }}") as {{ group.group_id }}:
-        {%- for group_task in group.tasks %}
-            {%- filter indent(4) %}
-            {{- render_task(group_task, config_values, env_configs) }}
-            {%- endfilter %}
-        {% endfor %}
+    {%- if config_data.get('task_groups') and config_data['task_groups'] %}
+    {%- for group in config_data['task_groups'] %}
+        {{ render_task_group(group, dag_variables) }}
     {%- endfor %}
-    {%- endif %} #}
-
-    {% for group in config_data['task_groups'] %}
-        {{ render_task_group(group, config_values, env_configs) }}
-    {% endfor %}
     {%- endif %}
     {#- End #}
 

@@ -15,16 +15,73 @@
 
 from jinja2 import Environment, FileSystemLoader
 import os
-import json
 import argparse
 import yaml
 import re
-from datetime import timedelta
+from utils import extract_keys_from_py_file, process_condition, has_valid_default_args
 
 config_file = ''
 
 def raise_exception(message):
     raise ValueError(message)
+
+
+def reformat_yaml(yaml_data):
+    """Reformats YAML data with an indentation of 4 spaces."""
+    return yaml.dump(yaml_data, indent=4)
+
+
+def import_variables(yaml_config: dict) -> dict:
+    """
+    Generate a dictionary for importing variables into a DAG.
+
+    This function determines how to import variables based on the
+    provided YAML configuration. It can import variables from a specified file, or from the YAML configuration. It also checks if 'default_args' is defined and not empty in the variables file.
+
+    Args:
+        yaml_config (dict): YAML configuration for the task.
+
+    Returns:
+        dict: A dictionary containing:
+            - add_variables (bool): Flag indicating whether to add variables.
+            - variables (list): A list of variables with preserved indentation.
+            - variable_keys (list): A list of unique variable keynames from the imported variables
+            - valid_default_args (bool): True if 'default_args' is defined and not empty, False otherwise.
+    """
+    variables = []
+    variable_keys = []
+    valid_default_args = False  # Initialize the flag here
+    try:
+        task_variables = yaml_config['task_variables']
+        if not isinstance(task_variables, dict):
+            raise TypeError("'task_variables' should be a dictionary.")
+
+        if task_variables.get('variables_file_path'):
+            file_path = task_variables['variables_file_path']
+            variable_keys = extract_keys_from_py_file(file_path)
+            print(f"Importing variables: reading variables from file {file_path}")
+
+            # Check for valid 'default_args' here
+            valid_default_args = has_valid_default_args(file_path)
+
+            with open(file_path, 'r') as file:
+                file_content = file.readlines()  # Read all lines into a list
+                variables = [line for line in file_content if '# type: ignore' not in line]
+
+    except (KeyError, TypeError) as e:
+        print(f"Importing Variables: Error processing variables file: {e}")
+
+    if variables:
+        return {
+            "add_variables": True,
+            "variables": variables,
+            "variable_keys": variable_keys,
+            "valid_default_args": valid_default_args
+        }
+    else:
+        print("Importing variables: Skipping variable import.")
+        return {"add_variables": False}
+
 
 def import_python_functions(yaml_config: dict) -> dict:
     """
@@ -63,7 +120,6 @@ def import_python_functions(yaml_config: dict) -> dict:
                     # Split the code into lines and preserve indentation
                     code_lines = func_data['code'].splitlines()
                     functions.append('\n'.join(code_lines))  # Join the lines back
-                    # functions.append(func_data['code'])
 
     except (KeyError, TypeError) as e:
         print(f"Importing Python Functions: Error processing YAML: {e}")
@@ -152,6 +208,7 @@ def validate_create_task_dependency(yaml_config: dict) -> dict:
     print("Task Validation: task validation successful")
     return {"task_dependency_type": "custom", "task_dependency": task_dependency}
 
+
 # Read configuration file from command line
 # Please refer to the documentation (README.md) to see how to author a
 # configuration (YAML) file that is used by the program to generate
@@ -188,13 +245,18 @@ def generate_dag_file(args):
     dag_template = args.dag_template
    
     with open(config_file,'r') as f:
-        config_data = yaml.safe_load(f)
+        # Register the tag with the YAML parser
+        tmp_config_data = yaml.safe_load(f)
+        config_data = yaml.safe_load(reformat_yaml(tmp_config_data))
         config_file_name = os.path.basename(config_file)
         config_data["config_file_name"] = config_file_name
         config_path = os.path.abspath(config_file)
         file_dir = os.path.dirname(os.path.abspath(__file__))
         template_dir = os.path.join(file_dir,"templates")
         dag_id = config_data['dag_id']
+
+        # Reading variables from .py variable file
+        dag_variables = import_variables(yaml_config=config_data)
         # Reading python function from .txt file or from YAML config as per configuration 
         python_functions = import_python_functions(yaml_config=config_data)
 
@@ -202,7 +264,7 @@ def generate_dag_file(args):
         task_dependency = validate_create_task_dependency(yaml_config=config_data)
         
         # Importing variables from variables.YAML or from YAML config as per configuration 
-        var_configs = config_data["task_variables"]
+        var_configs = config_data.get("task_variables")
 
         print("Config file: {}".format(config_path))
         print("Generating DAG for: {}".format(dag_template))
@@ -214,7 +276,13 @@ def generate_dag_file(args):
             loader=FileSystemLoader(template_dir),
             lstrip_blocks=True,
         )
-        env.globals['raise_exception'] = raise_exception
+
+        # Consolidate functions in env.globals
+        env.globals.update({
+            'process_condition': process_condition,
+            'raise_exception': raise_exception,
+        })
+
         template = env.get_template(dag_template+".template")
         framework_config_values = {'var_configs': var_configs}
 
@@ -226,12 +294,15 @@ def generate_dag_file(args):
         with open(generate_file_name, 'w') as fh:
             fh.write(
                 template.render(
-                    config_data=config_data, framework_config_values=framework_config_values,python_functions=python_functions, task_dependency=task_dependency,
+                    config_data=config_data, 
+                    framework_config_values=framework_config_values,python_functions=python_functions, 
+                    task_dependency=task_dependency,
+                    dag_variables=dag_variables,
                 )
             )
 
         print("Finished generating file: {}".format(generate_file_name))
-        print("Number of tasks generated: {}".format(str(len(config_data['tasks']))))
+
 
 if __name__ == '__main__':
     args = configure_arg_parser()

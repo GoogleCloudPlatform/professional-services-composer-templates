@@ -21,17 +21,10 @@ schedule_interval: "@once"
 is_paused_upon_creation: True
 tags: ["demo", "vertex_ai", "generative_ai"]
 
-# Default arguments
-default_args:
-    owner: 'Google'
-    retries: 0
-    email_on_failure: False
-    email_on_retry: False
-    depends_on_past: False
-    retry_delay: 1
-    sla: 55
-    execution_timeout: 60
-    start_date: '2024-01-01'
+
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/generative_ai_tasks_variables.py
+
 
 # Python functions used by Python operators
 custom_python_functions:
@@ -49,9 +42,9 @@ tasks:
 
     - task_id: sft_train_base_task
       task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.SupervisedFineTuningTrainOperator
-      project_id: cc_var_project_id
-      location: cc_var_region
-      source_model: cc_var_pro_model
+      project_id: project_id
+      location: region
+      source_model: pro_model
       train_dataset: gs://cloud-samples-data/ai-platform/generative_ai/gemini-1_5/text/sft_train_data.jsonl
       depends_on: 
         - training_data_exists_sensor
@@ -59,10 +52,10 @@ tasks:
 
     - task_id: count_tokens_task
       task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.CountTokensOperator
-      project_id: cc_var_project_id
-      location: cc_var_region
+      project_id: project_id
+      location: region
       pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
-      contents: cc_var_sample_prompt
+      contents: sample_prompt
       depends_on: 
         - sft_train_base_task
       trigger_rule: 'all_success'
@@ -70,11 +63,7 @@ tasks:
     - task_id: validate_tokens_task
       task_type: airflow.operators.python.PythonOperator
       python_callable: validate_tokens
-      op_kwargs:
-        character_budget: '1000'
-        token_budget: '500'
-        total_billable_characters: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_billable_characters") }}'
-        total_tokens: '{{ task_instance.xcom_pull(task_ids="count_tokens_task", key="total_tokens") }}'
+      op_kwargs: validate_tokens_op_kwargs
       provide_context: True
       depends_on: 
         - count_tokens_task
@@ -82,12 +71,12 @@ tasks:
 
     - task_id: deterministic_generate_content_task
       task_type: airflow.providers.google.cloud.operators.vertex_ai.generative_model.GenerativeModelGenerateContentOperator
-      project_id: cc_var_project_id
-      location: cc_var_region
+      project_id: project_id
+      location: region
       pretrained_model: '{{ task_instance.xcom_pull(task_ids="sft_train_base_task", key="tuned_model_endpoint_name") }}'
-      system_instruction: cc_var_system_instruction
-      contents: cc_var_sample_prompt
-      generation_config: cc_var_deterministic_gen_config
+      system_instruction: system_instruction
+      contents: sample_prompt
+      generation_config: deterministic_gen_config
       tools: []
       depends_on: 
         - validate_tokens_task
@@ -96,9 +85,3 @@ tasks:
 task_dependency:
   default_task_dependency: True
 
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: True  # Boolean to enable/disable file import
-  file_name: generative_ai_tasks_variables.yaml
-  environment: dev  # Environment to load from the file
