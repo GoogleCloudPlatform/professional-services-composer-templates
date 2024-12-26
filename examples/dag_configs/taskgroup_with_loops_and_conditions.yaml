@@ -1,0 +1,149 @@
+# Copyright 2024 Google LLC
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     https://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# DAG parameters
+# mandatory
+dag_id: taskgroup_with_loops_and_conditions
+description: TaskGroup example having loops and conditional statements
+catchup: False
+schedule_interval: None
+tags: ["test"]
+
+
+# Optional. List imports required outside of task operators
+additional_imports:
+  - module: from airflow.models import Variable
+
+
+# Define variables and DAG default_args in [.py] file
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/taskgroup_with_loops_and_conditions_variables.py
+
+
+# Define Python functions to be added in your Airflow DAG
+custom_python_functions:
+  custom_defined_functions:
+    process_data:
+      description: Placeholder function for data processing
+      code: |
+        # Placeholder function for data processing
+        def process_data(ti, **kwargs):
+          task_number = kwargs['task_number']
+          ti.xcom_push(key=f'data_output_{task_number}', value=f'Processed data for task {task_number}')
+    process_data_outputs:
+      description: Placeholder function to process data outputs
+      code: |
+        # Placeholder function to process data outputs
+        def process_data_outputs(ti):
+          # Example: Collect data outputs from dynamically generated tasks
+          outputs = []
+          for i in range(3):  # Adjust the range based on the number of dynamic tasks
+            output = ti.xcom_pull(task_ids=f'process_data_{i}', key=f'data_output_{i}')
+            if output:
+              outputs.append(output)
+
+          # Process the collected outputs
+          print(f"Collected data outputs: {outputs}")
+
+
+# Tasks specific configs
+# mandatory
+tasks:
+  - task_id: get_config
+    task_type: airflow.operators.python.PythonOperator
+    python_callable: |
+      lambda: {'environment': 'production', 'num_production_tasks': 3}
+  - task_id: process_outputs
+    task_type: airflow.operators.python.PythonOperator
+    depends_on:
+      - production_tasks
+      - staging_tasks
+    python_callable: process_data_outputs
+    trigger_rule: all_success
+  - task_id: finish
+    task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryExecuteQueryOperator
+    depends_on:
+      - process_outputs
+    passthrough_keys:
+      - sql
+    sql: |
+      "SELECT 'DAG completed!' AS status;"
+    use_legacy_sql: False
+    trigger_rule: all_success
+
+
+task_groups:
+  - group_id: production_tasks
+    depends_on:
+      - get_config
+    tasks:
+      - task_id: f'process_data_{i}'
+        pre_condition: |
+          # Use a for loop to create multiple tasks dynamically
+          for i in range(3):  # You can use a variable here if needed
+        task_type: airflow.operators.python.PythonOperator
+        python_callable: process_data
+        op_kwargs: "{'task_number': f'{i}'}"
+        passthrough_keys:
+          - op_kwargs
+      - task_id: finalize_production
+        task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryExecuteQueryOperator
+        sql: SELECT CURRENT_TIMESTAMP() AS completion_time;
+        use_legacy_sql: False
+  - group_id: staging_tasks
+    depends_on:
+      - get_config
+    tasks: 
+      - task_id: run_spark_job
+        task_type: airflow.providers.google.cloud.operators.dataproc.DataprocSubmitJobOperator
+        passthrough_keys:
+          - job
+        pre_condition: |
+          job={
+            "reference": {"project_id": PROJECT_ID},
+            "placement": {"cluster_name": DATAPROC_CLUSTER},
+            "spark_job": {
+                "main_class": "your.spark.main.class",  # Replace with your Spark main class
+                "jar_file_uris": [f"gs://{GCS_BUCKET}/your-spark-job.jar"],  # Use GCS_BUCKET variable
+            }
+          }
+        job: job
+        region: REGION
+        project_id: PROJECT_ID
+      - task_id: transfer_data_to_gcs
+        task_type: airflow.providers.google.cloud.operators.cloud_storage_transfer_service.CloudDataTransferServiceCreateJobOperator
+        passthrough_keys:
+          - body
+        pre_condition: |
+          body={
+            "transfer_job": {
+              "description": "Transfer data to GCS",
+              "project_id": PROJECT_ID,
+              "transfer_spec": {
+                "gcs_data_sink": {"bucket_name": GCS_BUCKET},
+                # ... (add your transfer source configuration here) ...
+              },
+              "status": "ENABLED",
+            }
+          }
+        body: body
+
+
+task_dependency:
+  default_task_dependency: True
+  pre_condition: 
+
+
+

@@ -13,17 +13,9 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateEmptyDatasetOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateEmptyTableOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryGetDataOperator
@@ -33,8 +25,6 @@ from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQue
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-
-
 
 
 def transformation(data):
@@ -61,6 +51,15 @@ def pull_xcom(**kwargs):
   return pulled_value
 
 
+
+# Define variables
+export_to_gcs_destination_cloud_storage_uris = "gs://hmh_composer_demo/export_files/covid.csv"
+export_to_gcs_source_project_dataset_table = "composer-templates-dev.hmh_demo.tmp_covid"
+destination_dataset_table = "composer-templates-dev.hmh_demo.tmp_covid"
+sql = 'SELECT * FROM `composer-templates-dev.hmh_demo.covid` WHERE case_reported_date = "2021-08-18"'
+project_id = "composer-templates-dev"
+
+# Define Airflow DAG default_args
 default_args = {
     "owner": 'test',
     "retries": 1,
@@ -73,10 +72,11 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
+
 dag = DAG(
     dag_id='bigquery_tasks_dag',
     default_args=default_args,
-    schedule='@hourly',
+    schedule="@hourly",
     description='None',
     max_active_runs=1,
     catchup=False,
@@ -85,54 +85,52 @@ dag = DAG(
     tags=['test'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=None
+    
 )
 
 
 with dag:
         
     create_bq_dataset = BigQueryCreateEmptyDatasetOperator(
-        task_id = "create_bq_dataset",
         dataset_id = "test_dataset",
-        project_id = "composer-templates-dev",
+        project_id = project_id,
+        task_id = "create_bq_dataset",
         trigger_rule = "none_failed",
     )
         
     create_bq_table = BigQueryCreateEmptyTableOperator(
-        task_id = "create_bq_table",
         dataset_id = "test_dataset",
         table_id = "test_table",
-        schema_fields = [{'name': 'emp_name', 'type': 'STRING', 'mode': 'REQUIRED'}, {'name': 'salary', 'type': 'INTEGER', 'mode': 'NULLABLE'}],
+        task_id = "create_bq_table",
         trigger_rule = "none_failed",
     )
         
     get_data_from_bq_table = BigQueryGetDataOperator(
-        task_id = "get_data_from_bq_table",
         dataset_id = "test_dataset",
         table_id = "test_table",
+        task_id = "get_data_from_bq_table",
         trigger_rule = "none_failed",
     )
         
     export_to_gcs = BigQueryToGCSOperator(
-        task_id = "export_to_gcs",
-        source_project_dataset_table = "composer-templates-dev.hmh_demo.tmp_covid",
-        destination_cloud_storage_uris = "gs://hmh_composer_demo/export_files/covid.csv",
+        destination_cloud_storage_uris = export_to_gcs_destination_cloud_storage_uris,
         export_format = "csv",
         field_delimiter = ",",
         print_header = True,
+        source_project_dataset_table = export_to_gcs_source_project_dataset_table,
+        task_id = "export_to_gcs",
         trigger_rule = "none_failed",
     )
         
     bq_query_execute = BigQueryExecuteQueryOperator(
+        allow_large_results = True,
+        destination_dataset_table = destination_dataset_table,
+        sql = sql,
         task_id = "bq_query_execute",
+        trigger_rule = "none_failed",
         use_legacy_sql = False,
         write_disposition = "WRITE_TRUNCATE",
-        allow_large_results = True,
-        destination_dataset_table = "composer-templates-dev.hmh_demo.tmp_covid",
-        sql = "SELECT * FROM `composer-templates-dev.hmh_demo.covid` WHERE case_reported_date = \"2021-08-18\"",
-        trigger_rule = "none_failed",
     )
-
 
     create_bq_dataset >> create_bq_table
     create_bq_dataset >> get_data_from_bq_table

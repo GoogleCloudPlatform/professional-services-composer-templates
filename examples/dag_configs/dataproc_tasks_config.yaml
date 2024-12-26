@@ -23,126 +23,81 @@ tags: ["test"]
 owner:
 
 
-# mandatory
-default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    email:                          
-    retry_delay: 1    # minutes
+# Optional. List imports required outside of task operators
+additional_imports:
+
+
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/dataproc_tasks_variables.py
 
 
 # Define Python functions to be added in your Airflow DAG
-# - import_functions_from_file:  
-#   - True:  Load functions from a local Python file (specify the 'file_path').
-#   - False: Define functions directly within this YAML configuration.
-# - functions: In-place code.
 custom_python_functions:
   custom_defined_functions:
-    # perform_transformation:
-    #   description: Sample function as an example to perform custom transformation.
-    #   code: |
-    #     def transformation(data):
-    #       """
-    #       Sample function as an example to perform custom transformation.
-
-    #       Args:
-    #         data: Sample data on which we can perform any transformation.
-          
-    #       Returns:
-    #         The data converted into a string format.
-    #       """
-    #       print("Printing sample payload from transformation function: {}".format(data))
-    #       output = str(data)
-    #       return output
-    # pull_xcom:
-    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-    #   code: |
-    #     def pull_xcom(**kwargs):
-    #       """
-    #       Pulls a value from XCom and prints it.
-    #       """
-    #       ti = kwargs['ti']
-    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-    #       print(f"Pulled value from XCom: {pulled_value}")
-    #       return pulled_value
 
 
 # Tasks specific configs
 # mandatory
 tasks:
-  #cc_operator_description: Create a new cluster on Google Cloud Dataproc.
   - task_id: create_cluster
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocCreateClusterOperator
-    cluster_name: cc_var_cluster_name
-    region: cc_var_region
-    project_id: cc_var_project_id
-    cluster_config: cc_var_create_cluster
+    cluster_name: cluster_name
+    region: region
+    project_id: project_id
+    cluster_config: create_cluster_config
     depends_on: 
     trigger_rule : 'none_failed'
-  #cc_operator_description: Update a cluster in a project.
   - task_id: update_cluster
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocUpdateClusterOperator
-    cluster_name: cc_var_cluster_name
-    project_id: cc_var_project_id
-    region: cc_var_region
+    cluster_name: cluster_name
+    project_id: project_id
+    region: region
     graceful_decommission_timeout: {"seconds": 600}
-    cluster: cc_var_update_cluster
+    cluster: update_cluster_config
     update_mask: {"paths":["config.worker_config.num_instances","config.secondary_worker_config.num_instances"]}
     deferrable: True
     depends_on: 
       - create_cluster
     trigger_rule : 'none_failed'
-  #cc_operator_description: Submit a job to a cluster.
   - task_id: hadoop_job
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocSubmitJobOperator
-    region: cc_var_region
-    project_id: cc_var_project_id
-    job: cc_var_hadoop_job
+    region: region
+    project_id: project_id
+    job: hadoop_job_config
     deferrable: True
     depends_on: 
       - update_cluster
     trigger_rule : 'none_failed'
-  #cc_operator_description: Submit a job to a cluster.
   - task_id: spark_job
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocSubmitJobOperator
-    region: cc_var_region
-    project_id: cc_var_project_id
-    job: cc_var_spark_job
+    region: region
+    project_id: project_id
+    job: spark_job_config
     deferrable: True
     depends_on: 
       - update_cluster
     trigger_rule : 'none_failed'
-  #cc_operator_description: Delete a cluster in a project.
   - task_id: delete_cluster
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocDeleteClusterOperator
-    cluster_name: cc_var_cluster_name
-    region: cc_var_region
-    project_id: cc_var_project_id
+    cluster_name: cluster_name
+    region: region
+    project_id: project_id
     depends_on: 
       - spark_job
     trigger_rule : 'none_failed'
-  #cc_operator_description: Creates new workflow template.
   - task_id: create_template
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocCreateWorkflowTemplateOperator
-    # The template id of your workflow
-    template: cc_var_create_template
-    project_id: cc_var_project_id
-    # The region for the template
-    region: cc_var_region
+    template: create_template_config
+    project_id: project_id
+    region: region
     depends_on: 
       - delete_cluster
     trigger_rule : 'all_done'
-  #cc_operator_description: Instantiate a WorkflowTemplate on Google Cloud Dataproc.
   - task_id: start_template_job
     task_type: airflow.providers.google.cloud.operators.dataproc.DataprocInstantiateWorkflowTemplateOperator
-    # The template id of your workflow
     template_id: "sparkpi"
-    project_id: cc_var_project_id
-    # The region for the template
-    region: cc_var_region
-    #deferrable: True
+    project_id: project_id
+    region: region
     depends_on: 
       - create_template
     trigger_rule : 'none_failed'
@@ -150,23 +105,4 @@ tasks:
 
 task_dependency:
   default_task_dependency: True
-
-
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: False  # Boolean to enable/disable file import
-  file_name: dataproc_tasks_config.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    cc_var_project_id: composer-templates-dev
-    cc_var_cluster_name: test-cluster
-    cc_var_region: us-central1
-    cc_var_create_cluster: {"master_config":{"num_instances":1,"machine_type_uri":"n1-standard-4","disk_config":{"boot_disk_type":"pd-standard","boot_disk_size_gb":1024}},"worker_config":{"num_instances":2,"machine_type_uri":"n1-standard-4","disk_config":{"boot_disk_type":"pd-standard","boot_disk_size_gb":1024}},"gce_cluster_config":{"internal_ip_only":1}}
-    cc_var_update_cluster: {"config":{"worker_config":{"num_instances":3},"secondary_worker_config":{"num_instances":3}}}
-    cc_var_hadoop_job: {"reference":{"project_id":"composer-templates-dev"},"placement":{"cluster_name":"test-cluster"},"hadoop_job":{"main_jar_file_uri":"file:///usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar","args":["wordcount","gs://pub/shakespeare/rose.txt","us-central1-composer-dag-fa-2d7e71fc-bucket/data/"]}}
-    cc_var_spark_job: {"reference":{"project_id":"composer-templates-dev"},"placement":{"cluster_name":"test-cluster"},"spark_job":{"jar_file_uris":["file:///usr/lib/spark/examples/jars/spark-examples.jar"],"main_class":"org.apache.spark.examples.SparkPi"}}
-    cc_var_create_template: {"id":"sparkpi","placement":{"managed_cluster":{"cluster_name":"test-cluster","config":{"master_config":{"num_instances":1,"machine_type_uri":"n1-standard-4","disk_config":{"boot_disk_type":"pd-standard","boot_disk_size_gb":1024}},"worker_config":{"num_instances":2,"machine_type_uri":"n1-standard-4","disk_config":{"boot_disk_type":"pd-standard","boot_disk_size_gb":1024}},"gce_cluster_config":{"internal_ip_only":1}}}},"jobs":[{"spark_job":{"main_class":"org.apache.spark.examples.SparkPi","jar_file_uris":["file:///usr/lib/spark/examples/jars/spark-examples.jar"]},"step_id":"compute"}]}
 

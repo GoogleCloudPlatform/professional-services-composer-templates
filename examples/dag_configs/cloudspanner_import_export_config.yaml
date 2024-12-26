@@ -45,7 +45,7 @@ dag_id: cloudspanner_import_export_tasks_dag
 description: "Sample example to import/export data in and out of cloud spanner."
 max_active_runs:
 catchup: False
-schedule: 
+schedule: None
 tags: ["spanner","test","v1.1"]
 start_date:
 end_date:
@@ -53,18 +53,15 @@ max_active_tasks: 5
 dagrun_timeout: timedelta(hours=3)
 is_paused_upon_creation: True
 
-# mandatory
-default_args:
-  owner: 'test'
-  depends_on_past: False
-  retries: 3
-  email_on_failure: False
-  email_on_retry: False
-  email: ["test@example.com"]                       
-  retry_delay: 1  # minutes   
-  mode: "reschedule"
-  poke_interval: 120
-  sla: 60            
+
+# Optional. List imports required outside of task operators
+additional_imports:
+  - module: from google.cloud import spanner, storage
+
+
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/cloudspanner_tasks_variables.py
+
 
 # Define Python functions to be added in your Airflow DAG
 # - import_functions_from_file:  
@@ -172,36 +169,44 @@ custom_python_functions:
 # Tasks specific configs
 # mandatory
 tasks:
-  # cc_operator_description: Ingest data from GCS to Cloud Spanner
   - task_id: gcs_to_spanner
     task_type: airflow.operators.python_operator.PythonOperator
     python_callable: upload_gcs_to_spanner
-    op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_import_gcs_bucket_name,"file_name":cc_var_import_gcs_file_name,"table_name":cc_var_spanner_table,"columns":cc_var_spanner_table_columns}
+    op_kwargs: |
+      {
+        "project_id": gcp_project_id,
+        "instance_id": spanner_instance_id,
+        "database_id": spanner_databse_id,
+        "bucket_name": import_gcs_bucket_name,
+        "file_name": import_gcs_file_name,
+        "table_name": spanner_table,
+        "columns": spanner_table_columns
+      }
     trigger_rule : 'all_done'
     depends_on: 
       - extract_data
-  # cc_operator_description: Delete old data from Cloud spanner table (an example to showcase SpannerQueryDatabaseInstanceOperator)
   - task_id: delete_results_from_spanner
     task_type: airflow.providers.google.cloud.operators.spanner.SpannerQueryDatabaseInstanceOperator
-    instance_id: cc_var_spanner_instance_id
-    database_id: cc_var_spanner_databse_id
-    query: cc_var_spanner_sql_query 
-    project_id: cc_var_gcp_project_id
+    instance_id: spanner_instance_id
+    database_id: spanner_databse_id
+    query: spanner_sql_query 
+    project_id: gcp_project_id
     trigger_rule : 'all_done'
     depends_on: 
       - gcs_to_spanner
-  # cc_operator_description: Export data from Cloud Spanner to GCS
   - task_id: spanner_to_gcs
     task_type: airflow.operators.python_operator.PythonOperator
     python_callable: export_spanner_to_gcs
-    op_kwargs: {"project_id":cc_var_gcp_project_id,"instance_id":cc_var_spanner_instance_id,"database_id":cc_var_spanner_databse_id,"bucket_name":cc_var_export_gcs_bucket_name,"file_name":cc_var_export_gcs_file_name,"sql_query":cc_var_spanner_sql_export_query}
+    op_kwargs: |
+      {"project_id":gcp_project_id,"instance_id":spanner_instance_id,"database_id":spanner_databse_id,"bucket_name":export_gcs_bucket_name,"file_name":export_gcs_file_name,"sql_query":spanner_sql_export_query}
     trigger_rule : 'all_done'
     depends_on: 
       - delete_results_from_spanner
   - task_id: sample_python
     task_type: airflow.operators.python_operator.PythonOperator
     python_callable: print_args
-    op_args: ['Composer', 'template', cc_var_gcp_project_id]
+    op_args: |
+      ['Composer', 'template', gcp_project_id]
     depends_on: 
       - delete_results_from_spanner
 
@@ -256,23 +261,3 @@ task_dependency:
     - "extract_data >> gcs_to_spanner >> delete_results_from_spanner >> [spanner_to_gcs, sample_python]"
 
 
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: True  # Boolean to enable/disable file import
-  file_name: cloudspanner_tasks_variables.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    cc_var_gcp_project_id: composer-templates-dev
-    cc_var_spanner_instance_id: composer-templates-spannerdb
-    cc_var_spanner_databse_id: dev-spannerdb
-    cc_var_spanner_table: Products
-    cc_var_spanner_table_columns: ["ProductId","ProductName","Description","Price","LastModified"]
-    cc_var_spanner_sql_query: "DELETE FROM Products WHERE LastModified < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 DAY);"
-    cc_var_import_gcs_bucket_name: composer-templates-dev-input-files
-    cc_var_import_gcs_file_name: spanner_input/sample_data_spanner.csv
-    cc_var_export_gcs_bucket_name: hmh_backup
-    cc_var_export_gcs_file_name: spanner_output/product_data_output.csv
-    cc_var_spanner_sql_export_query: "SELECT * FROM Products ;"

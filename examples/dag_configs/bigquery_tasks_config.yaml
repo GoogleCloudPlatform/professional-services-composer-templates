@@ -22,14 +22,15 @@ schedule_interval: '@hourly'
 tags: ["test"]
 owner:
 
-# mandatory
-default_args:
-  owner: 'test'
-  retries:
-  email_on_failure: False
-  email_on_retry: False
-  email:                          
-  retry_delay: 1    # minutes         
+
+# Optional. List imports required outside of task operators
+additional_imports:
+
+
+# Define variables and DAG default_args in [.py] file
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/bigquery_tasks_variables.py
+
 
 # Define Python functions to be added in your Airflow DAG
 # - import_functions_from_file:  
@@ -75,7 +76,7 @@ tasks:
   - task_id: create_bq_dataset
     task_type: airflow.providers.google.cloud.operators.bigquery.BigQueryCreateEmptyDatasetOperator
     dataset_id: 'test_dataset'
-    project_id: cc_var_project_id
+    project_id: project_id
     depends_on: 
     trigger_rule : 'none_failed'
   #cc_operator_description: Creates a new table in the specified BigQuery dataset, optionally with schema.
@@ -98,8 +99,8 @@ tasks:
   #cc_operator_description: Transfers a BigQuery table to a Google Cloud Storage bucket.
   - task_id: export_to_gcs
     task_type: airflow.providers.google.cloud.transfers.bigquery_to_gcs.BigQueryToGCSOperator
-    source_project_dataset_table: cc_var_export_to_gcs_source_project_dataset_table
-    destination_cloud_storage_uris: cc_var_export_to_gcs_destination_cloud_storage_uris
+    source_project_dataset_table: export_to_gcs_source_project_dataset_table
+    destination_cloud_storage_uris: export_to_gcs_destination_cloud_storage_uris
     export_format: csv
     field_delimiter: ','
     print_header: True
@@ -112,8 +113,8 @@ tasks:
     use_legacy_sql: False
     write_disposition: WRITE_TRUNCATE
     allow_large_results: True
-    destination_dataset_table: cc_var_destination_dataset_table
-    sql: cc_var_sql
+    destination_dataset_table: destination_dataset_table
+    sql: sql
     depends_on: 
       - export_to_gcs
     trigger_rule : 'none_failed'
@@ -122,18 +123,3 @@ tasks:
 task_dependency:
   default_task_dependency: True
 
-
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: False
-  file_name: bigquery_tasks_config.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    cc_var_export_to_gcs_destination_cloud_storage_uris: "gs://hmh_composer_demo/export_files/covid.csv"
-    cc_var_export_to_gcs_source_project_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
-    cc_var_destination_dataset_table: composer-templates-dev.hmh_demo.tmp_covid
-    cc_var_sql: 'SELECT * FROM `composer-templates-dev.hmh_demo.covid` WHERE case_reported_date = "2021-08-18"'
-    cc_var_project_id: composer-templates-dev

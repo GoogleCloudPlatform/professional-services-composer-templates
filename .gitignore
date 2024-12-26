@@ -3,3 +3,5 @@
 
 # Ignore code workspace json file
 *.code-workspace
+
+examples/.DS_Store

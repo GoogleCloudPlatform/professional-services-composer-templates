@@ -14,8 +14,13 @@
 {%- set all_task_ids = all_task_ids | unique | list %}
 
 
+{%- set processed_precondition = process_condition(config_data.task_dependency, 'pre_condition') %}
+{%- if processed_precondition %}
+    {{ processed_precondition.updated_pre_condition | indent(4) }}
+{%- endif %}
+
 {%- if task_dependency['task_dependency_type'] == "custom" %}
-    {% for dependency in task_dependency['task_dependency'] %}
+    {%- for dependency in task_dependency['task_dependency'] %}
     {{ dependency }}
     {%- endfor -%}
 {%- elif task_dependency['task_dependency_type'] == "default" %}

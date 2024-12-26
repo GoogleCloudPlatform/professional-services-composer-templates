@@ -13,17 +13,9 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 from airflow.providers.google.cloud.operators.dataform import DataformCreateCompilationResultOperator
 from airflow.providers.google.cloud.operators.dataform import DataformCreateWorkflowInvocationOperator
 
@@ -33,7 +25,10 @@ log.setLevel(logging.INFO)
 
 
 
+# Define variables
 
+
+# Define Airflow DAG default_args
 default_args = {
     "owner": 'test',
     "retries": 1,
@@ -46,10 +41,13 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
+
+
+
 dag = DAG(
     dag_id='dataform_tasks_dag',
     default_args=default_args,
-    schedule='None',
+    schedule=None,
     description='None',
     max_active_runs=1,
     catchup=False,
@@ -58,30 +56,27 @@ dag = DAG(
     tags=['test'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=None
+    
 )
 
 
 with dag:
         
     create_compilation_result = DataformCreateCompilationResultOperator(
-        task_id = "create_compilation_result",
         project_id = "composer-templates-dev",
         region = "us-central1",
         repository_id = "quickstart-production",
-        compilation_result = {'git_commitish': 'main'},
+        task_id = "create_compilation_result",
         trigger_rule = "none_failed",
     )
         
     create_workflow_invocation = DataformCreateWorkflowInvocationOperator(
-        task_id = "create_workflow_invocation",
+        asynchronous = True,
         project_id = "composer-templates-dev",
         region = "us-central1",
         repository_id = "quickstart-production",
-        asynchronous = True,
-        workflow_invocation = {'compilation_result': "{{ task_instance.xcom_pull('create_compilation_result')['name'] }}"},
+        task_id = "create_workflow_invocation",
         trigger_rule = "none_failed",
     )
-
 
     create_compilation_result >> create_workflow_invocation
