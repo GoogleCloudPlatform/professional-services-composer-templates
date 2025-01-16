@@ -1,70 +1,83 @@
-{%- macro format_value(key, value) %}
-  {%- if value is string %}
-    '{{ value }}'
-  {%- elif key in ['retry_delay', 'sla', 'execution_timeout'] and value is number %}
-    timedelta(minutes={{ value }})
-  {%- else %}
-    {{ value }}
-  {%- endif %}
+{%- macro render_optional_param(config, param_name, default_value=None) %}
+    {%- if param_name in config and config[param_name] -%}
+        {{ param_name }}={{ config[param_name] }},
+    {%- elif default_value is not none -%}
+        {{ param_name }}={{ default_value }},
+    {%- endif -%}
 {%- endmacro %}
 
-{%- macro process_value(value, import_from_file, env_configs) %}
-  {%- if value.startswith("cc_var_") %}
-    {%- if import_from_file -%}
-        env_configs.get('{{ value }}')
-    {%- else -%}
-        {{ env_configs[value]|tojson }}
-    {%- endif %}
-  {%- else -%}
-        '{{ value }}' 
-  {%- endif %}
-{%- endmacro %}
 
-{%- macro render_task_group(group, config_values, env_configs) %}
+{%- macro render_task_group(group, dag_variables) %}
     with TaskGroup(group_id="{{ group.group_id }}") as {{ group.group_id }}:
         {%- for task in group.tasks %}
             {%- filter indent(4) %}
-            {{ render_task(task, config_values, env_configs) }}
+            {{ render_task(task, dag_variables) }}
             {%- endfilter %}
         {%- endfor %}
         {%- if 'task_groups' in group %}
             {%- for nested_group in group.task_groups %}
                 {%- filter indent(4) %}
-                {{ render_task_group(nested_group, config_values, env_configs) }}
+                {{ render_task_group(nested_group, dag_variables) }}
                 {%- endfilter %}
             {%- endfor %}
         {%- endif %}
 {%- endmacro %}
 
-{% macro render_task(task, config_values, env_configs) %}
-    {{ task['task_id'] }} = {{ task['task_type'].split('.')[-1] }}(
-        {%- for key, value in task.items() if key not in ('depends_on', 'task_type') %}
-            {%- if value is string %}
-                {%- if key == "python_callable" %}
-        {{ key }} = {{ value }},
-                {%- elif value.startswith("cc_var_") %}
-        {{ key }} = {% if config_values.var_configs["import_from_file"] %}env_configs.get('{{ value }}'){% else %}{{ env_configs[value]|tojson }}{% endif %},
-                {%- else %}
-        {{ key }} = {{ value | tojson }},
-                {%- endif %}
-            {%- elif key == "op_kwargs" and value is mapping %}
-        op_kwargs = {
-            {%- for k, v in value.items() %}
-            '{{ k }}': {{ process_value(v, config_values.var_configs.get("import_from_file"), env_configs) }},
-            {%- endfor %}
-        },
-            {%- elif key == "op_args" and value is sequence %}
-        op_args = [
-            {%- for v in value %}
-            {{ process_value(v, config_values.var_configs.get("import_from_file"), env_configs) }},
-            {%- endfor %}
-        ],
-            {%- else %}
-        {{ key }} = {{ value }},
-            {%- endif %}
-        {%- endfor %}
+
+{%- macro render_task(task, dag_variables) -%}
+{%- set processed_precondition = process_condition(task, 'pre_condition') %}
+{%- set processed_postcondition = process_condition(task, 'post_condition') %}
+{%- if processed_precondition %}
+{%- set indent_multiplier = processed_precondition.last_line_indent %}
+    {%- if processed_precondition.last_line_check %}
+    {{ processed_precondition.updated_pre_condition | indent(4) }}
+    {{ '    ' * (indent_multiplier or 1) }}{{task.get('task_id_expression') or task.task_id }} = {{ task['task_type'].split('.')[-1] }}(
+        {{- render_task_parameters(task, dag_variables) | indent(4 * (indent_multiplier or 1)) }}
+    {{ '    ' * (indent_multiplier or 1) + ')' }}
+    {%- else %}
+    {{ processed_precondition.updated_pre_condition | indent(4) }}
+    {{ '  ' * indent_multiplier }}{{ task.get('task_id_expression') or task.task_id }} = {{ task['task_type'].split('.')[-1] }}(
+        {{- render_task_parameters(task, dag_variables) | indent(4 * indent_multiplier) }}
     )
+    {%- endif %}
+{%- else %}
+    {{ task.get('task_id_expression') or task.task_id }} = {{ task['task_type'].split('.')[-1] }}(
+        {{- render_task_parameters(task, dag_variables) }}
+    )
+{%- endif %}
+
+{%- if processed_postcondition %} 
+    {{ processed_postcondition.updated_post_condition | indent(4) }}
+{%- endif %}
+
 {%- endmacro %}
+
+
+{% macro render_task_parameters(task, dag_variables) %}
+{%- set passthrough_keys = task.get("passthrough_keys", []) %}
+    {%- for key, value in task.items() if key not in ('depends_on', 'task_type', 'pre_condition', 'post_condition') %}
+        {%- if key == "op_kwargs" %}
+        op_kwargs = {{ value | indent(8) | trim }},
+        {%- elif key == "op_args" %}
+        op_args = {{ value | indent(8) | trim }},
+        {%- elif key == "python_callable" %}
+        {{ key }} = {{ value | trim }},
+        {%- elif key in passthrough_keys %}
+        {{ key }} = {{ value | trim | indent(4) }},
+        {%- elif value is number %}
+        {{ key }} = {{ value }},
+        {%- elif value is string %}
+            {%- if value in dag_variables.variable_keys %}
+        {{ key }} = {{ value }},
+            {%- elif value.startswith(('f"', "f'")) and value.endswith(('"', "'")) %}
+        {{ key }} = {{ value }},
+            {%- else %}
+        {{ key }} = {{ value | tojson }},
+            {%- endif %}
+        {%- endif %}
+    {%- endfor %}
+{%- endmacro %}
+
 
 {%- macro extract_task_ids(group, temp_taskgroup_task_ids=None) -%}
     {%- if temp_taskgroup_task_ids is none %}
@@ -82,6 +95,7 @@
     {{ temp_taskgroup_task_ids | join(',') | replace('\n', '') }}
 {%- endmacro %}
 
+
 {%- macro process_dependencies_recursive(group, all_task_ids) -%}
     {{ process_dependencies(group, all_task_ids) }}
     {%- if group.get('task_groups') %}
@@ -94,15 +108,16 @@
     {%- endfor %}
 {%- endmacro -%}
 
+
 {%- macro process_dependencies(item, all_task_ids) -%}
     {%- if item.depends_on %} 
         {%- for dependency in item.depends_on %}
             {%- if dependency not in all_task_ids %}
                 {{ raise_exception("Dependency task not found: " ~ dependency) }}
             {%- else %}
-    {{ dependency }} >> 
+    {{ dependency }} >> {{ item.task_id or item.group_id }}
             {%- endif %}
         {%- endfor -%}
-        {{ ' ' + (item.task_id or item.group_id) }}
     {%- endif %}
 {%- endmacro -%}
+

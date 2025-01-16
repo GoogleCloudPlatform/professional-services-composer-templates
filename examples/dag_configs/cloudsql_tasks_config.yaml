@@ -31,23 +31,18 @@ max_active_runs:
 catchup: False
 schedule_interval: "None"   # mandatory; enclose values within quotes
 tags: ["test"]
-owner:
+owner:       
 
-# mandatory
-default_args:
-  owner: 'test'
-  retries:
-  email_on_failure: False
-  email_on_retry: False
-  email:                          
-  retry_delay: 1    # minutes           
+
+# Optional. List imports required outside of task operators
+additional_imports:
+
+
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/cloudsql_tasks_variables.py
 
 
 # Define Python functions to be added in your Airflow DAG
-# - import_functions_from_file:  
-#   - True:  Load functions from a local Python file (specify the 'file_path').
-#   - False: Define functions directly within this YAML configuration.
-# - functions: In-place code.
 custom_python_functions:
   custom_defined_functions:
     perform_transformation:
@@ -78,79 +73,46 @@ custom_python_functions:
           print(f"Pulled value from XCom: {pulled_value}")
           return pulled_value
 
+
 # Tasks specific configs
 # mandatory
 tasks:
-  #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
   - task_id: cloud_sql_truncate_sales_table_task
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExecuteQueryOperator
-    gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
-    sql: cc_var_truncate_sales_table_sql
+    gcp_cloudsql_conn_id: gcp_cloudsql_conn_id
+    sql: truncate_sales_table_sql
     trigger_rule : 'all_done'
     depends_on: 
-  #cc_operator_description: Import data into a Cloud SQL instance from Cloud Storage.
   - task_id: cloud_sql_import_sales_data_from_gcs
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLImportInstanceOperator
-    instance: cc_var_composer_instance
-    body: cc_var_import_from_gcs_cloud_sql_body
+    instance: composer_instance
+    body: import_from_gcs_cloud_sql_body
     trigger_rule : 'all_done'
     depends_on: 
       - cloud_sql_truncate_sales_table_task
-  #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
   - task_id: cloud_sql_drop_sales_reporting_table_task
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExecuteQueryOperator
-    gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
-    sql: cc_var_drop_sales_reporting_table_sql
+    gcp_cloudsql_conn_id: gcp_cloudsql_conn_id
+    sql: drop_sales_reporting_table_sql
     trigger_rule : 'all_done'
     depends_on: 
       - cloud_sql_import_sales_data_from_gcs
-  #cc_operator_description: Performs DDL or DML SQL queries in Google Cloud SQL instance.
   - task_id: cloud_sql_create_sales_reporting_table_task
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExecuteQueryOperator
-    gcp_cloudsql_conn_id: cc_var_gcp_cloudsql_conn_id
-    sql: cc_var_create_sales_table_sql
+    gcp_cloudsql_conn_id: gcp_cloudsql_conn_id
+    sql: create_sales_table_sql
     trigger_rule : 'all_done'
     depends_on: 
       - cloud_sql_drop_sales_reporting_table_task
-  #cc_operator_description: Export data from a Cloud SQL instance to a Cloud Storage bucket.
   - task_id: export_sales_reporting_table_to_gcs
     task_type: airflow.providers.google.cloud.operators.cloud_sql.CloudSQLExportInstanceOperator
-    instance: cc_var_composer_instance
-    body: cc_var_export_to_gcs_cloud_sql_body
+    instance: composer_instance
+    body: export_to_gcs_cloud_sql_body
     trigger_rule : 'all_done'
     depends_on: 
       - cloud_sql_create_sales_reporting_table_task
 
 
 task_dependency:
-  # Controls task dependency management.
-  # - default_task_dependency: Controls default dependency behavior.
-  #   - If True, tasks will depend on each other based on the `depends_on` configuration within each task definition.
-  #   - If False, use `custom_task_dependency` to define dependencies.
-  # - custom_task_dependency:  Explicitly define dependencies
-  
-  # Examples (Each entry `-` defines a separate dependency chain in the generated Airflow DAG. Must be enclosed with double-quotes):
-  #   - "task_a >> task_b >> task_c"  
-  #   - "[task_a, task_b] >> task_c" 
-  #   - "task_a >> task_b | task_c >> task_d" 
   default_task_dependency: True
 
-
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: False  # Boolean to enable/disable file import
-  file_name: cloudsql_tasks_config.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    # Below connection_id is retrieved from Google Cloud Secret Manager. 
-    # A secret should be created with the naming convention: airflow-connections-<variable_name> ex: airflow-connections-airflow_composer_template_mysql
-    cc_var_gcp_cloudsql_conn_id : airflow_composer_template_mysql
-    cc_var_truncate_sales_table_sql : 'TRUNCATE TABLE sales;'
-    cc_var_drop_sales_reporting_table_sql: 'DROP TABLE IF EXISTS sales_reporting;'
-    cc_var_create_sales_table_sql: 'create table sales_reporting as select s.sale_id, p.product_name, p.description, s.order_date, s.city, s.state, p.price as product_price, s.quantity, (s.quantity*p.price) as actual_sell_price, s.total_price as sell_price, s.total_price - (s.quantity*p.price) as difference from sales s inner join products p on s.product_id = p.product_id;'
-    cc_var_composer_instance: composer-template
-    cc_var_import_from_gcs_cloud_sql_body: {"importContext": {"fileType": "CSV", "uri": "gs://hmh_composer_demo/demo_test_csv/daily_sales.csv", "database": "transactions", "csvImportOptions": {"table": "sales","escapeCharacter":  "5C", "quoteCharacter": "22", "fieldsTerminatedBy": "2C", "linesTerminatedBy": "0A"}}}
-    cc_var_export_to_gcs_cloud_sql_body: {"exportContext":{"fileType": "CSV","uri": "gs://hmh_composer_demo/demo_test_csv/sales_report.csv", "databases": ["transactions"], "offload": True, "csvExportOptions": {"selectQuery": "SELECT * FROM sales_reporting;"}}}

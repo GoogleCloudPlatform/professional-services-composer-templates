@@ -13,17 +13,9 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 from airflow.utils.task_group import TaskGroup
 from airflow.providers.google.cloud.operators.datafusion import CloudDataFusionStartPipelineOperator
 from airflow.operators.dummy import DummyOperator
@@ -31,8 +23,6 @@ from airflow.operators.dummy import DummyOperator
 
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
-
-
 
 
 def pull_xcom(**kwargs):
@@ -45,6 +35,11 @@ def pull_xcom(**kwargs):
   return pulled_value
 
 
+
+# Define variables
+
+
+# Define Airflow DAG default_args
 default_args = {
     "owner": 'test',
     "retries": 1,
@@ -56,6 +51,7 @@ default_args = {
     "sla": timedelta(minutes=55),
     "execution_timeout": timedelta(minutes=60)
 }
+
 
 dag = DAG(
     dag_id='nested_task_groups_dag',
@@ -69,23 +65,20 @@ dag = DAG(
     tags=['test'],
     start_date=datetime(2024, 12, 1),
     end_date=datetime(2024, 12, 1),
-    max_active_tasks=None
+    
 )
 
 
 with dag:
         
     create_datafusion_pipeline = CloudDataFusionStartPipelineOperator(
-        task_id = "create_datafusion_pipeline",
-        pipeline_name = "test",
         instance_name = "test1",
         location = "us-west1",
+        pipeline_name = "test",
         project_id = "composer-templates-dev",
+        task_id = "create_datafusion_pipeline",
         trigger_rule = "none_failed",
     )
-
-
-
         
     with TaskGroup(group_id="Simple_Task_Group") as Simple_Task_Group:
                 
@@ -130,7 +123,6 @@ with dag:
             T6 = DummyOperator(
                 task_id = "T6",
             )
-
 
             
     Simple_Task_Group >> Nested_Task_Group

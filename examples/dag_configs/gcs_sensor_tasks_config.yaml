@@ -23,75 +23,30 @@ tags: ["test"]
 owner:
 
 
-# mandatory
-default_args:
-    owner: 'test'
-    retries:
-    email_on_failure: False
-    email_on_retry: False
-    email:                          
-    retry_delay: 1    # minutes        
-
-
-# Define Python functions to be added in your Airflow DAG
-# - import_functions_from_file:  
-#   - True:  Load functions from a local Python file (specify the 'file_path').
-#   - False: Define functions directly within this YAML configuration.
-# - functions: In-place code.
-custom_python_functions:
-  custom_defined_functions:
-    # perform_transformation:
-    #   description: Sample function as an example to perform custom transformation.
-    #   code: |
-    #     def transformation(data):
-    #       """
-    #       Sample function as an example to perform custom transformation.
-
-    #       Args:
-    #         data: Sample data on which we can perform any transformation.
-          
-    #       Returns:
-    #         The data converted into a string format.
-    #       """
-    #       print("Printing sample payload from transformation function: {}".format(data))
-    #       output = str(data)
-    #       return output
-    # pull_xcom:
-    #   description: Function to pull xcom variables from export GCS task print or use it for other transformations.
-    #   code: |
-    #     def pull_xcom(**kwargs):
-    #       """
-    #       Pulls a value from XCom and prints it.
-    #       """
-    #       ti = kwargs['ti']
-    #       pulled_value = str(ti.xcom_pull(task_ids='export_sales_reporting_table_to_gcs', key='file_details'))
-    #       print(f"Pulled value from XCom: {pulled_value}")
-    #       return pulled_value
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/gcs_sensor_tasks_variables.py
 
 
 # Tasks specific configs
 # mandatory
 tasks:
-  #cc_operator_description: Checks for the existence of GCS objects at a given prefix, passing matches via XCom.
   - task_id: gcs_file_sensor
     task_type: airflow.providers.google.cloud.sensors.gcs.GCSObjectsWithPrefixExistenceSensor
-    bucket: cc_var_gcs_bucket_name
-    prefix: cc_var_gcs_bucket_prefix
+    bucket: gcs_bucket_name
+    prefix: gcs_bucket_prefix
     mode: poke
     trigger_rule : 'all_done'
     depends_on: 
-  #cc_operator_description:
   - task_id: print_file_names_from_gcs
     task_type: airflow.operators.bash.BashOperator
-    bash_command: cc_var_bash_command
+    bash_command: bash_command
     trigger_rule : 'all_done'
     depends_on: 
       - gcs_file_sensor
-  #cc_operator_description: Deletes objects from a list or all objects matching a prefix from a Google Cloud Storage bucket.
   - task_id: gcs_delete_file
     task_type: airflow.providers.google.cloud.operators.gcs.GCSDeleteObjectsOperator
-    bucket_name: cc_var_gcs_bucket_name
-    prefix: cc_var_gcs_bucket_prefix
+    bucket_name: gcs_bucket_name
+    prefix: gcs_bucket_prefix
     trigger_rule : 'all_done'
     depends_on: 
       - print_file_names_from_gcs
@@ -100,16 +55,3 @@ tasks:
 task_dependency:
   default_task_dependency: True
 
-
-task_variables:
-  # Load variables from a YAML file in GCS. The file should be at:
-  # gs://<YOUR_COMPOSER_ENV_NAME>/dag_variables/<variables_file_name>
-  import_from_file: False  # Boolean to enable/disable file import
-  file_name: gcs_sensor_tasks_config.yaml
-  environment: dev  # Environment to load from the file
-
-  # Define variables here if not importing from file.
-  variables:
-    cc_var_gcs_bucket_name: sample-bq-test-2 
-    cc_var_gcs_bucket_prefix : gcs-sensor/ 
-    cc_var_bash_command: echo {{ ti.xcom_pull(task_ids="gcs_file_sensor") }}

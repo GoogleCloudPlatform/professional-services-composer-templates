@@ -13,18 +13,11 @@
 # limitations under the License.
 
 
-import os
-import airflow
-import yaml
 import logging
 from datetime import datetime, timedelta
 from airflow.models import DAG
-from typing import Any
-from typing import Dict
-from airflow.operators.dummy_operator import DummyOperator
-from google.cloud import storage
-from google.cloud import spanner
 from airflow.utils.task_group import TaskGroup
+from google.cloud import spanner, storage
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.google.cloud.operators.spanner import SpannerQueryDatabaseInstanceOperator
 from airflow.operators.bash import BashOperator
@@ -34,69 +27,6 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 log = logging.getLogger("airflow")
 log.setLevel(logging.INFO)
 
-composer_env_name = os.environ["COMPOSER_ENVIRONMENT"]
-composer_env_bucket = os.environ["GCS_BUCKET"]
-env_configs = {}
-
-def load_config_from_gcs(bucket_name: str, source_blob_name: str) -> Dict[str, Any]:
-    """Downloads a blob from the bucket."""
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename("config.yaml")
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    return config
-
-run_time_config_data = load_config_from_gcs(
-    bucket_name=composer_env_bucket,
-    source_blob_name="dag_variables/cloudspanner_tasks_variables.yaml"
-)
-
-if type(run_time_config_data["dev"]) is dict:
-    env_configs = run_time_config_data["dev"]
-
-
-def upload_gcs_to_spanner(
-  project_id:str, instance_id:str, database_id:str, bucket_name:str, file_name:str, table_name:str,columns:list):
-  """Uploads data from a CSV file in GCS to a Cloud Spanner table."""
-  """
-  :param str project_id: Google Cloud Project ID
-  :param str instance_id: Google Cloud Spanner Instance ID
-  :param str database_id: Google Cloud Spanner Database ID
-  :param str bucket_name: Google Cloud Storage Bucket to read files
-  :param str file_name: Filename to import to 
-  :param str table_name: Cloud Spanner Table name for importing data
-  :param list columns: Cloud Spanner table column names in ascending order as per DDL (assumed that input file is in same order)
-  :return dict : GCS file path and Spanner details
-  """
-
-  # Initialize Cloud Spanner client
-  spanner_client = spanner.Client(project=project_id)
-  instance = spanner_client.instance(instance_id)
-  database = instance.database(database_id)
-
-  # Initialize Cloud Storage client
-  storage_client = storage.Client(project=project_id)
-  bucket = storage_client.bucket(bucket_name)
-  blob = bucket.blob(file_name)
-
-  # Download the file from GCS
-  data = blob.download_as_string()
-
-  # Parse the CSV data
-  rows = []
-  for line in data.decode("utf-8").splitlines():
-      row = line.split(",")
-      rows.append(row)
-
-  # Insert data into Cloud Spanner table
-  cols = columns
-  with database.batch() as batch:
-      batch.insert(table=table_name, columns=cols, values=rows)
-
-  print(f"Data from {file_name} uploaded to {table_name} successfully.")
-  return {"input_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}", "spanner_databse_table":f"{database_id}"+":"+f"{table_name}"}
 
 def export_spanner_to_gcs(
   project_id, instance_id, database_id, bucket_name, file_name, sql_query):
@@ -144,7 +74,63 @@ def print_args(*args):
   for arg in args:
     print(arg)
 
+def upload_gcs_to_spanner(
+  project_id:str, instance_id:str, database_id:str, bucket_name:str, file_name:str, table_name:str,columns:list):
+  """Uploads data from a CSV file in GCS to a Cloud Spanner table."""
+  """
+  :param str project_id: Google Cloud Project ID
+  :param str instance_id: Google Cloud Spanner Instance ID
+  :param str database_id: Google Cloud Spanner Database ID
+  :param str bucket_name: Google Cloud Storage Bucket to read files
+  :param str file_name: Filename to import to 
+  :param str table_name: Cloud Spanner Table name for importing data
+  :param list columns: Cloud Spanner table column names in ascending order as per DDL (assumed that input file is in same order)
+  :return dict : GCS file path and Spanner details
+  """
 
+  # Initialize Cloud Spanner client
+  spanner_client = spanner.Client(project=project_id)
+  instance = spanner_client.instance(instance_id)
+  database = instance.database(database_id)
+
+  # Initialize Cloud Storage client
+  storage_client = storage.Client(project=project_id)
+  bucket = storage_client.bucket(bucket_name)
+  blob = bucket.blob(file_name)
+
+  # Download the file from GCS
+  data = blob.download_as_string()
+
+  # Parse the CSV data
+  rows = []
+  for line in data.decode("utf-8").splitlines():
+      row = line.split(",")
+      rows.append(row)
+
+  # Insert data into Cloud Spanner table
+  cols = columns
+  with database.batch() as batch:
+      batch.insert(table=table_name, columns=cols, values=rows)
+
+  print(f"Data from {file_name} uploaded to {table_name} successfully.")
+  return {"input_file_path":"gs://"+f"{bucket_name}"+"/"+f"{file_name}", "spanner_databse_table":f"{database_id}"+":"+f"{table_name}"}
+
+
+
+# Define variables
+gcp_project_id = "composer-templates-dev"
+spanner_instance_id = "composer-templates-spannerdb"
+spanner_databse_id = "dev-spannerdb"
+spanner_table = "Products"
+spanner_table_columns = ["ProductId","ProductName","Description","Price","LastModified"]
+spanner_sql_query = "DELETE FROM Products WHERE LastModified < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 4 DAY);"
+import_gcs_bucket_name = "composer-templates-dev-input-files"
+import_gcs_file_name = "spanner_input/sample_data_spanner.csv"
+export_gcs_bucket_name = "hmh_backup"
+export_gcs_file_name = "spanner_output/product_data_output.csv"
+spanner_sql_export_query = "SELECT * FROM Products ;"
+
+# Define Airflow DAG default_args
 default_args = {
     "owner": 'test',
     "depends_on_past": False,
@@ -162,10 +148,11 @@ default_args = {
     "execution_timeout": timedelta(minutes=60)
 }
 
+
 dag = DAG(
     dag_id='cloudspanner_import_export_tasks_dag',
     default_args=default_args,
-    schedule=null,
+    schedule=None,
     description='Sample example to import/export data in and out of cloud spanner.',
     max_active_runs=1,
     catchup=False,
@@ -173,84 +160,76 @@ dag = DAG(
     dagrun_timeout=timedelta(hours=3),
     tags=['spanner', 'test', 'v1.1'],
     start_date=datetime(2024, 12, 1),
-    end_date=datetime(2024, 12, 1),
-    max_active_tasks=5
+    end_date=datetime(2024, 12, 1),max_active_tasks=5,
+    
 )
 
 
 with dag:
         
     gcs_to_spanner = PythonOperator(
-        task_id = "gcs_to_spanner",
-        python_callable = upload_gcs_to_spanner,
         op_kwargs = {
-            'project_id': env_configs.get('cc_var_gcp_project_id'),
-            'instance_id': env_configs.get('cc_var_spanner_instance_id'),
-            'database_id': env_configs.get('cc_var_spanner_databse_id'),
-            'bucket_name': env_configs.get('cc_var_import_gcs_bucket_name'),
-            'file_name': env_configs.get('cc_var_import_gcs_file_name'),
-            'table_name': env_configs.get('cc_var_spanner_table'),
-            'columns': env_configs.get('cc_var_spanner_table_columns'),
+          "project_id": gcp_project_id,
+          "instance_id": spanner_instance_id,
+          "database_id": spanner_databse_id,
+          "bucket_name": import_gcs_bucket_name,
+          "file_name": import_gcs_file_name,
+          "table_name": spanner_table,
+          "columns": spanner_table_columns
         },
+        python_callable = upload_gcs_to_spanner,
+        task_id = "gcs_to_spanner",
         trigger_rule = "all_done",
     )
         
     delete_results_from_spanner = SpannerQueryDatabaseInstanceOperator(
+        database_id = spanner_databse_id,
+        instance_id = spanner_instance_id,
+        project_id = gcp_project_id,
+        query = spanner_sql_query,
         task_id = "delete_results_from_spanner",
-        instance_id = env_configs.get('cc_var_spanner_instance_id'),
-        database_id = env_configs.get('cc_var_spanner_databse_id'),
-        query = env_configs.get('cc_var_spanner_sql_query'),
-        project_id = env_configs.get('cc_var_gcp_project_id'),
         trigger_rule = "all_done",
     )
         
     spanner_to_gcs = PythonOperator(
-        task_id = "spanner_to_gcs",
+        op_kwargs = {"project_id":gcp_project_id,"instance_id":spanner_instance_id,"database_id":spanner_databse_id,"bucket_name":export_gcs_bucket_name,"file_name":export_gcs_file_name,"sql_query":spanner_sql_export_query},
         python_callable = export_spanner_to_gcs,
-        op_kwargs = {
-            'project_id': env_configs.get('cc_var_gcp_project_id'),
-            'instance_id': env_configs.get('cc_var_spanner_instance_id'),
-            'database_id': env_configs.get('cc_var_spanner_databse_id'),
-            'bucket_name': env_configs.get('cc_var_export_gcs_bucket_name'),
-            'file_name': env_configs.get('cc_var_export_gcs_file_name'),
-            'sql_query': env_configs.get('cc_var_spanner_sql_export_query'),
-        },
+        task_id = "spanner_to_gcs",
         trigger_rule = "all_done",
     )
         
     sample_python = PythonOperator(
-        task_id = "sample_python",
+        op_args = ['Composer', 'template', gcp_project_id],
         python_callable = print_args,
-        op_args = [
-            'Composer',
-            'template',
-            env_configs.get('cc_var_gcp_project_id'),
-        ],
+        task_id = "sample_python",
     )
-
+        
     with TaskGroup(group_id="my_task_group1") as my_task_group1:
+                
         bash_example1 = BashOperator(
-            task_id = "bash_example1",
             bash_command = "echo \"bash_example1\"\ndate\nls -l\n",
+            task_id = "bash_example1",
         )
-
+                
         bash_example2 = BashOperator(
-            task_id = "bash_example2",
             bash_command = "echo \"bash_example2\"\npwd\n",
+            task_id = "bash_example2",
         )
-
+        
     with TaskGroup(group_id="extract_data") as extract_data:
+                
         extract_from_source_a = PostgresOperator(
-            task_id = "extract_from_source_a",
             sql = "SELECT * FROM source_a;",
+            task_id = "extract_from_source_a",
         )
-
+                
         extract_from_source_b = PostgresOperator(
-            task_id = "extract_from_source_b",
             sql = "SELECT * FROM source_b;",
+            task_id = "extract_from_source_b",
         )
 
-
+            
+            
     my_task_group1 >> extract_data
     bash_example1 >> extract_from_source_a
     bash_example2 >> extract_from_source_b

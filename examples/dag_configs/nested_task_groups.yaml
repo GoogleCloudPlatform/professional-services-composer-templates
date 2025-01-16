@@ -24,21 +24,11 @@ tags: ["test"]
 owner:
 
 
-# mandatory
-default_args:
-  owner: 'test'
-  retries:
-  email_on_failure: False
-  email_on_retry: False
-  email:                          
-  retry_delay: 1    # minutes
+task_variables:
+  variables_file_path: examples/composer_dag_tasks_variables/nested_task_groups_variables.py
 
 
 # Define Python functions to be added in your Airflow DAG
-# - import_functions_from_file:  
-#   - True:  Load functions from a local Python file (specify the 'file_path').
-#   - False: Define functions directly within this YAML configuration.
-# - functions: In-place code.
 custom_python_functions:
   custom_defined_functions:
     pull_xcom:
@@ -106,7 +96,4 @@ task_groups:
 
 task_dependency:
   default_task_dependency: True
-
-
-task_variables:
 
