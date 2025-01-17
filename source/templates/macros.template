@@ -37,8 +37,8 @@
     {%- else %}
     {{ processed_precondition.updated_pre_condition | indent(4) }}
     {{ '  ' * indent_multiplier }}{{ task.get('task_id_expression') or task.task_id }} = {{ task['task_type'].split('.')[-1] }}(
-        {{- render_task_parameters(task, dag_variables) | indent(4 * indent_multiplier) }}
-    )
+        {{- render_task_parameters(task, dag_variables) | indent(2 * indent_multiplier) }}
+    {{ '  ' * indent_multiplier + ')' }}
     {%- endif %}
 {%- else %}
     {{ task.get('task_id_expression') or task.task_id }} = {{ task['task_type'].split('.')[-1] }}(
@@ -46,7 +46,7 @@
     )
 {%- endif %}
 
-{%- if processed_postcondition %} 
+{% if processed_postcondition %} 
     {{ processed_postcondition.updated_post_condition | indent(4) }}
 {%- endif %}
 
