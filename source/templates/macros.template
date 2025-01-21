@@ -55,7 +55,7 @@
 
 {% macro render_task_parameters(task, dag_variables) %}
 {%- set passthrough_keys = task.get("passthrough_keys", []) %}
-    {%- for key, value in task.items() if key not in ('depends_on', 'task_type', 'pre_condition', 'post_condition') %}
+    {%- for key, value in task.items() if key not in ('depends_on', 'task_type', 'pre_condition', 'post_condition', 'task_id_expression') %}
         {%- if key == "op_kwargs" %}
         op_kwargs = {{ value | indent(8) | trim }},
         {%- elif key == "op_args" %}
