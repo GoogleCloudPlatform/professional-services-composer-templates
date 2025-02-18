@@ -57,6 +57,7 @@ is_paused_upon_creation: True
 # Optional. List imports required outside of task operators
 additional_imports:
   - module: from google.cloud import spanner, storage
+  - module: from airflow.models.variable import Variable
 
 
 task_variables:

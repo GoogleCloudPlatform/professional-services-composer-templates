@@ -1,5 +1,9 @@
 # type: ignore
 
+# TO Export variables from custom config file or from airflow variables. Please refer to below mentioned examples
+# gcp_project_id = config["gcp_project_id"]
+# gcp_project_id= Variable.get("gcp_project_id")
+
 # Define variables
 gcp_project_id = "composer-templates-dev"
 spanner_instance_id = "composer-templates-spannerdb"
